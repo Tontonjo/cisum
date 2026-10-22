@@ -1,4 +1,4 @@
-// Cisum web player v0.7.0 - Cover art image with a neutral placeholder.
+// Cisum web player v0.11.0 - Cover art image with a neutral placeholder.
 import { useEffect, useState } from 'react'
 import { Box, useTheme } from '@mui/material'
 import MusicNoteRounded from '@mui/icons-material/MusicNoteRounded'
@@ -7,19 +7,24 @@ import { coverUrl } from '../api/client'
 /**
  * size: number (px) for fixed covers, or undefined to fill the parent width (square).
  * icon: placeholder icon component (default music note); version: cache buster for replaced images.
+ * hint: size (px) of the same cover already displayed elsewhere; that copy is in the browser cache and
+ * is shown at once underneath while the requested size loads.
  */
-export default function Cover({ id, size, radius = 3, request, alt = '', sx, round = false, icon: Icon = MusicNoteRounded, version }) {
+export default function Cover({ id, size, radius = 3, request, alt = '', sx, round = false, icon: Icon = MusicNoteRounded, version, hint }) {
   const { m3 } = useTheme()
   const [failed, setFailed] = useState(false)
   useEffect(() => setFailed(false), [id, version])
   const px = request || (typeof size === 'number' ? Math.min(Math.ceil(size * 2 / 100) * 100, 600) : 400)
   const src = id && !failed ? coverUrl(id, px, version) : null
+  const hintSrc = src && hint && hint !== px ? coverUrl(id, hint, version) : null
   const dims = typeof size === 'number' ? { width: size, height: size } : { width: '100%', aspectRatio: '1 / 1' }
   return (
     <Box
       sx={{
         ...dims, flexShrink: 0, borderRadius: round ? '50%' : radius, overflow: 'hidden', position: 'relative',
-        bgcolor: m3.surfaceContainerHighest, color: m3.onSurfaceVariant, display: 'grid', placeItems: 'center', ...sx,
+        bgcolor: m3.surfaceContainerHighest, color: m3.onSurfaceVariant, display: 'grid', placeItems: 'center',
+        ...(hintSrc && { backgroundImage: `url("${hintSrc}")`, backgroundSize: 'cover', backgroundPosition: 'center' }),
+        ...sx,
       }}
     >
       {src ? (

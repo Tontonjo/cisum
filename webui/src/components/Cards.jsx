@@ -1,21 +1,27 @@
-// Cisum web player v0.6.0 - Album and artist cards, grids and horizontal shelves.
+// Cisum web player v0.11.1 - Album and artist cards, grids and horizontal shelves.
+// Cards start loading their detail page when pressed or focused (api/preload.js).
 import { Box, Typography, IconButton, useTheme } from '@mui/material'
 import { Link } from 'react-router-dom'
 import PlayArrowRounded from '@mui/icons-material/PlayArrowRounded'
-import { getAlbum } from '../api/library'
+import { queryClient } from '../api/queryClient'
+import { albumQuery, intentProps } from '../api/preload'
 import { usePlayer } from '../store/player'
 import Cover from './Cover'
 
 export async function playAlbum(id, shuffle = false) {
-  const album = await getAlbum(id)
+  // Same cache as the album page: no second request when the album was already loaded
+  const album = await queryClient.fetchQuery(albumQuery(id))
   usePlayer.getState().playTracks(album.tracks, 0, { shuffle })
 }
+
+// Size requested by a card cover (Cover default when it fills its parent)
+const CARD_COVER_PX = 400
 
 export function AlbumCard({ album, subtitle }) {
   const { m3 } = useTheme()
   const to = `/albums/${album.id}`
   return (
-    <Box sx={{ minWidth: 0, '&:hover .card-play, &:focus-within .card-play': { opacity: 1, transform: 'translateY(0)' } }}>
+    <Box {...intentProps('album', album, CARD_COVER_PX)} sx={{ minWidth: 0, '&:hover .card-play, &:focus-within .card-play': { opacity: 1, transform: 'translateY(0)' } }}>
       <Box sx={{ position: 'relative' }}>
         <Box component={Link} to={to} tabIndex={-1} aria-hidden="true" sx={{ display: 'block', borderRadius: 4 }}>
           <Cover id={album.coverArt} radius={4} alt="" />
@@ -45,7 +51,7 @@ export function AlbumCard({ album, subtitle }) {
 /** detail replaces the album count line (e.g. "42 plays" while sorting by plays). */
 export function ArtistCard({ artist, detail }) {
   return (
-    <Box component={Link} to={`/artists/${artist.id}`} sx={{ display: 'block', textDecoration: 'none', color: 'inherit', textAlign: 'center', minWidth: 0 }}>
+    <Box component={Link} to={`/artists/${artist.id}`} {...intentProps('artist', artist, CARD_COVER_PX)} sx={{ display: 'block', textDecoration: 'none', color: 'inherit', textAlign: 'center', minWidth: 0 }}>
       <Cover id={artist.coverArt} round alt="" />
       <Typography variant="subtitle2" noWrap sx={{ mt: 1.25, fontSize: '0.95rem' }}>{artist.name}</Typography>
       {(detail || artist.albumCount !== undefined) && (

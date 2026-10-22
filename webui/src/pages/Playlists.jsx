@@ -1,4 +1,4 @@
-// Cisum web player v0.10.0 - Playlists: list with a remembered sort, multi-select export (M3U8 / ZIP), multi-file import
+// Cisum web player v0.11.1 - Playlists: list with a remembered sort, multi-select export (M3U8 / ZIP), multi-file import
 // (M3U / M3U8 / ZIP on the server, .nsp dynamic playlists here) and dynamic playlist creation.
 import { useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
@@ -13,6 +13,7 @@ import AutoAwesomeRounded from '@mui/icons-material/AutoAwesomeRounded'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   getPlaylists, importPlaylists, exportPlaylists, createSmartPlaylist, previewSmartPlaylist, PLAYLIST_SORTS,
+  playlistCover,
 } from '../api/library'
 import { isNspFile, parseNsp } from '../utils/smartRules'
 import { useClientSort } from '../utils/sort'
@@ -25,6 +26,7 @@ import { TaskProgress } from '../components/admin/Panel'
 import Cover from '../components/Cover'
 import NewPlaylistDialog from '../components/NewPlaylistDialog'
 import SmartPlaylistDialog from '../components/SmartPlaylistDialog'
+import { intentProps } from '../api/preload'
 
 function ImportReport({ reports, onClose }) {
   return (
@@ -181,8 +183,8 @@ export default function Playlists() {
               sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1, py: 0.75, borderRadius: 4, '&:hover': { bgcolor: 'action.hover' } }}
             >
               {canImportExport && <Checkbox checked={isSelected} onChange={() => toggle(p.id)} inputProps={{ 'aria-label': `Select ${p.name}` }} />}
-              <Box component={Link} to={`/playlists/${p.id}`} sx={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 2, color: 'inherit', textDecoration: 'none' }}>
-                <Cover id={`pl-${p.id}`} size={64} radius={3} />
+              <Box component={Link} to={`/playlists/${p.id}`} {...intentProps('playlist', p, 200)} sx={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 2, color: 'inherit', textDecoration: 'none' }}>
+                <Cover id={playlistCover(p)} size={64} radius={3} />
                 <Box sx={{ minWidth: 0 }}>
                   <Typography variant="subtitle1" noWrap sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
                     {p.name}

@@ -1,4 +1,4 @@
-# Cisum 0.10.2
+# Cisum 0.11.1
 
 Cisum is a music server with a modern web player, built on [Navidrome](https://github.com/navidrome/navidrome).
 It keeps Navidrome's scanner, file matching and full Subsonic/OpenSubsonic API, so every Subsonic
@@ -30,6 +30,8 @@ mobile app keeps working, and adds the features below.
 | Web radios | Menu > Radios. Administrators add stations by URL (direct stream, `.pls` or `.m3u` link), find them in the radio-browser.info directory (name, genre, country), import `.m3u` / `.pls` files and edit or delete them; everyone can export the list. Stations play through the server (works on an https server with http stations) and show the song being broadcast with the titles heard during the session. Each user has favorite radios, shown on the home page. Subsonic apps see the same stations. Disable the directory with `CISUM_RADIOBROWSER_ENABLED=false`. |
 | Home page | Settings > Home page: show or hide each home list (favorite radios, recently added, played recently, most played, something different) and drag them to change their order. Saved per user, on the server. |
 | Dynamic playlists | Playlists built from rules and rebuilt each time they are opened (by their owner; others see the last result). Create one with the sparkle icon next to + in the menu, or Playlists > New dynamic playlist. Rules on about 80 criteria (title, artist and every role, genre and every tag, year, dates, duration, favorite, rating, play count, last played, album and artist statistics, file details, other playlists...), matched all together (and) or any of them (or); order random or by up to 3 fields; limit in songs or percent. Templates, value suggestions, live preview of the matching songs, JSON editing for nested groups, export and import of `.nsp` files (Navidrome format). Subsonic apps see these playlists too. |
+| Instant pages | Album, artist and playlist pages open at once: pressing a card or link (or focusing it with the keyboard) starts loading the page, and the header (name, cover, artist, counts) is drawn immediately from what the link already shows. Songs and albums still loading are shown as grey placeholder rows that keep the final layout. Play and Shuffle work before the songs appear. |
+| Cover cache | Every cover is requested with its content hash, so the browser keeps it for a year and shows it instantly when you come back to a page, without asking the server. Items the server knows have no image show the placeholder without any request. |
 | Error screen | If the interface crashes or does not start, a message replaces the blank page, with Reload, Reset player (clears the play queue saved in the browser) and the technical details to report. |
 
 ## Install with Docker

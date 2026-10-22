@@ -1,4 +1,4 @@
-// Cisum web player build configuration v0.10.2
+// Cisum web player build configuration v0.11.1
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 

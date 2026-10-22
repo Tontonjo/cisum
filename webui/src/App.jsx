@@ -1,8 +1,9 @@
-// Cisum web player v0.4.0 - Application root: theme, data cache, authentication and routes.
+// Cisum web player v0.11.0 - Application root: theme, data cache, authentication and routes.
 import { useEffect, useMemo, useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { ThemeProvider, CssBaseline, useMediaQuery } from '@mui/material'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClientProvider } from '@tanstack/react-query'
+import { queryClient } from './api/queryClient'
 import { buildTheme, seedFromImage } from './theme/theme'
 import { useSettings } from './store/settings'
 import { usePlayer } from './store/player'
@@ -26,10 +27,6 @@ import Search from './pages/Search'
 import Settings from './pages/Settings'
 import Admin from './pages/Admin'
 import SharePage from './pages/SharePage'
-
-const queryClient = new QueryClient({
-  defaultOptions: { queries: { staleTime: 60_000, refetchOnWindowFocus: false, retry: 1 } },
-})
 
 /** Follows the playing track's cover to derive the dynamic accent color. */
 function useCoverSeed() {

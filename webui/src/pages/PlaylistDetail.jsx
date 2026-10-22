@@ -1,10 +1,12 @@
-// Cisum web player v0.10.0 - Playlist page: play, edit, reorder, remove, export, delete.
+// Cisum web player v0.11.1 - Playlist page: play, edit, reorder, remove, export, delete.
+// The header comes at once from the playlist list already loaded by the sidebar (or the link's preview);
+// placeholder rows stand for the songs while they load.
 // Dynamic playlists: rules summary, rules editor, .nsp export; songs are rebuilt by the server on each opening.
 // Missing songs are listed greyed out at their position; they are never removed automatically.
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
-  Box, IconButton, Tooltip, CircularProgress, Dialog, DialogTitle, DialogContent, DialogActions,
+  Box, IconButton, Tooltip, Dialog, DialogTitle, DialogContent, DialogActions,
   Button, TextField, FormControlLabel, Switch, Alert, Menu, MenuItem, ListItemIcon,
 } from '@mui/material'
 import MoreVertRounded from '@mui/icons-material/MoreVertRounded'
@@ -24,8 +26,9 @@ import GroupRounded from '@mui/icons-material/GroupRounded'
 import LinkRounded from '@mui/icons-material/LinkRounded'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  getPlaylist, getPlaylists, getPlaylistTracks, getPlaylistAccess, getSmartFields, updatePlaylist, deletePlaylist, removeFromPlaylist,
+  getPlaylists, getPlaylistAccess, getSmartFields, updatePlaylist, deletePlaylist, removeFromPlaylist,
   moveInPlaylist, exportPlaylists,
+  playlistCover,
 } from '../api/library'
 import { getSession } from '../api/client'
 import { usePlayer } from '../store/player'
@@ -33,6 +36,8 @@ import { useUi } from '../store/ui'
 import { formatLength, plural } from '../utils/format'
 import DetailHeader from '../components/DetailHeader'
 import TrackList from '../components/TrackList'
+import { DetailHeaderSkeleton, TrackListSkeleton } from '../components/Skeletons'
+import { getPreview, playlistInfoQuery, playlistTracksQuery } from '../api/preload'
 import { EmptyState } from '../components/Cards'
 
 function EditDialog({ playlist, open, onClose, onSaved }) {
@@ -80,14 +85,20 @@ export default function PlaylistDetail() {
   const isSmart = () =>
     !!(qc.getQueryData(['playlist', id, 'info'])?.rules || qc.getQueryData(['playlists'])?.find((p) => p.id === id)?.rules)
   const staleTime = () => (isSmart() ? 0 : 60_000)
-  const { data: playlist } = useQuery({ queryKey: ['playlist', id, 'info'], queryFn: () => getPlaylist(id), staleTime })
-  const { data: tracks = [], isLoading } = useQuery({ queryKey: ['playlist', id], queryFn: () => getPlaylistTracks(id), staleTime })
+  const preview = getPreview('playlist', id)
+  const { data: playlist } = useQuery({
+    ...playlistInfoQuery(id),
+    staleTime,
+    // Same fields as the playlist list (sidebar), so the whole header is ready before the request ends
+    placeholderData: () => qc.getQueryData(['playlists'])?.find((p) => p.id === id) || preview,
+  })
+  const { data: tracks = [], isLoading } = useQuery({ ...playlistTracksQuery(id), staleTime })
   const smart = !!playlist?.rules
   const { data: smartFields } = useQuery({ queryKey: ['smartFields'], queryFn: getSmartFields, staleTime: Infinity, enabled: smart })
   const { data: allPlaylists = [] } = useQuery({ queryKey: ['playlists'], queryFn: getPlaylists, enabled: smart })
   const { data: access } = useQuery({ queryKey: ['playlistAccess', id], queryFn: () => getPlaylistAccess(id) })
 
-  if (!playlist || isLoading) return <Box sx={{ display: 'grid', placeItems: 'center', py: 10 }}><CircularProgress /></Box>
+  if (!playlist) return <><DetailHeaderSkeleton /><TrackListSkeleton showCover /></>
 
   const session = getSession()
   // Cisum: rights come from the server (owner, editors, administrators)
@@ -108,6 +119,12 @@ export default function PlaylistDetail() {
     setTimeout(() => URL.revokeObjectURL(a.href), 1000)
   }
   const missingCount = tracks.length - playable.length
+  // While the songs load, the header uses the totals of the playlist list and Play waits for the songs
+  const songCount = isLoading ? playlist.songCount : tracks.length
+  const duration = isLoading ? playlist.duration : playable.reduce((s, t) => s + t.duration, 0)
+  const loadPlayable = async () =>
+    isLoading ? (await qc.fetchQuery({ ...playlistTracksQuery(id), staleTime: staleTime() })).filter((t) => !t.missing) : playable
+  const canPlay = isLoading ? playlist.songCount > 0 : playable.length > 0
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ['playlist', id] })
@@ -145,19 +162,20 @@ export default function PlaylistDetail() {
   return (
     <>
       <DetailHeader
-        coverId={`pl-${playlist.id}`}
+        coverId={playlistCover(playlist)}
+        coverHint={preview?.coverPx}
         title={playlist.name}
         subtitle={playlist.comment || undefined}
-        meta={[plural(tracks.length, 'song'), formatLength(playable.reduce((s, t) => s + t.duration, 0)), `by ${playlist.ownerName}`].join(', ')}
-        onPlay={playable.length ? () => playTracks(playable) : undefined}
-        onShuffle={playable.length ? () => playTracks(playable, 0, { shuffle: true }) : undefined}
+        meta={[plural(songCount || 0, 'song'), formatLength(duration), `by ${playlist.ownerName}`].join(', ')}
+        onPlay={canPlay ? async () => playTracks(await loadPlayable()) : undefined}
+        onShuffle={canPlay ? async () => playTracks(await loadPlayable(), 0, { shuffle: true }) : undefined}
         actions={
           <>
             <Tooltip title="More actions">
               <IconButton aria-label="More playlist actions" onClick={(e) => setMenu(e.currentTarget)}><MoreVertRounded /></IconButton>
             </Tooltip>
             <Menu anchorEl={menu} open={!!menu} onClose={() => setMenu(null)}>
-              <MenuItem onClick={() => { setMenu(null); addToQueue(playable); notify('Playlist added to the queue') }}>
+              <MenuItem onClick={async () => { setMenu(null); addToQueue(await loadPlayable()); notify('Playlist added to the queue') }}>
                 <ListItemIcon><AddToQueueRounded fontSize="small" /></ListItemIcon>Add to queue
               </MenuItem>
               {owner && smart && (
@@ -220,13 +238,15 @@ export default function PlaylistDetail() {
           {missingCount === 1 ? ' plays' : ' play'} again automatically once the file is back in the library, even at a new location.
         </Alert>
       )}
-      {!tracks.length && (
+      {!isLoading && !tracks.length && (
         <EmptyState title={smart ? 'No song matches the rules' : 'This playlist is empty'}>
           {smart ? 'Change the rules to include more songs.' : 'Use "Add to playlist" from any song, album or the player.'}
         </EmptyState>
       )}
 
-      <TrackList tracks={tracks} showCover showAlbum menuItems={menuItems} onMove={editable ? onMove : undefined} />
+      {isLoading
+        ? <TrackListSkeleton count={playlist.songCount} showCover />
+        : <TrackList tracks={tracks} showCover showAlbum menuItems={menuItems} onMove={editable ? onMove : undefined} />}
 
       {owner && (
         <EditDialog

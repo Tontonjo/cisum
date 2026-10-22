@@ -1,10 +1,10 @@
-// Cisum web player v0.10.2 - server-injected configuration.
+// Cisum web player v0.11.1 - server-injected configuration.
 // The server renders index.html as a Go template and injects window.__APP_CONFIG__
 // (a JSON string in production, absent when running the Vite dev server).
 
 const defaults = {
   version: 'dev',
-  cisumVersion: '0.10.2',
+  cisumVersion: '0.11.1',
   firstTime: false,
   baseURL: '',
   waveformEnabled: true,
@@ -26,7 +26,7 @@ function readConfig() {
 
 const config = readConfig()
 
-export const APP_VERSION = '0.10.2'
+export const APP_VERSION = '0.11.1'
 export const WEB_ROOT = `${config.baseURL}/web`
 
 /** Public share page data (injected on /share/{id} pages), or null. */

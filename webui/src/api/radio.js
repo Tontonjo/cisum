@@ -1,7 +1,8 @@
-// Cisum web player v0.7.0 - Web radio data access, playlist files (M3U / PLS) and directory search.
+// Cisum web player v0.11.1 - Web radio data access, playlist files (M3U / PLS) and directory search.
 // Stations are shared by all users; only administrators create, edit or delete them (server rule).
 import { nativeApi, getSession } from './client'
 import config from '../config'
+import { artworkId } from './library'
 
 // ---------- Stations ----------
 
@@ -12,7 +13,7 @@ export function radioFromNative(r) {
     name: r.name,
     streamUrl: r.streamUrl,
     homePageUrl: r.homePageUrl || '',
-    coverArt: r.uploadedImage ? `ra-${r.id}` : null,
+    coverArt: r.uploadedImage ? artworkId('ra', r.id, r) : null,
     coverVersion: r.imageHash || r.updatedAt,
     createdAt: r.createdAt,
   }

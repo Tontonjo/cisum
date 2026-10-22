@@ -1,8 +1,8 @@
-// Cisum web player v0.5.0 - Picks a playlist (or creates one) for the selected tracks.
+// Cisum web player v0.11.1 - Picks a playlist (or creates one) for the selected tracks.
 import { useState } from 'react'
 import { Dialog, DialogTitle, DialogContent, DialogActions, Button, List, ListItemButton, ListItemAvatar, ListItemText, TextField, Box } from '@mui/material'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { getPlaylists, addToPlaylist, createPlaylist, getEditablePlaylistIds } from '../api/library'
+import { getPlaylists, addToPlaylist, createPlaylist, getEditablePlaylistIds, playlistCover } from '../api/library'
 import { useUi } from '../store/ui'
 import { plural } from '../utils/format'
 import Cover from './Cover'
@@ -65,7 +65,7 @@ export default function AddToPlaylistDialog() {
           {editable.map((p) => (
             <ListItemButton key={p.id} onClick={() => addTo(p)} disabled={busy} sx={{ borderRadius: 3 }}>
               <ListItemAvatar>
-                <Cover id={`pl-${p.id}`} size={40} radius={1.5} />
+                <Cover id={playlistCover(p)} size={40} radius={1.5} />
               </ListItemAvatar>
               <ListItemText primary={p.name} secondary={plural(p.songCount, 'song')} />
             </ListItemButton>

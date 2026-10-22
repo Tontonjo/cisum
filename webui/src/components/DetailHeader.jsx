@@ -1,10 +1,11 @@
-// Cisum web player v0.1.0 - Header for album, artist and playlist pages.
+// Cisum web player v0.11.0 - Header for album, artist and playlist pages.
+// coverHint: size (px) of the cover shown by the link that opened the page (see Cover hint).
 import { Box, Typography, Button, useTheme } from '@mui/material'
 import PlayArrowRounded from '@mui/icons-material/PlayArrowRounded'
 import ShuffleRounded from '@mui/icons-material/ShuffleRounded'
 import Cover from './Cover'
 
-export default function DetailHeader({ coverId, round, title, subtitle, meta, onPlay, onShuffle, actions, children }) {
+export default function DetailHeader({ coverId, coverHint, round, title, subtitle, meta, onPlay, onShuffle, actions, children }) {
   const { m3 } = useTheme()
   return (
     <Box
@@ -16,7 +17,7 @@ export default function DetailHeader({ coverId, round, title, subtitle, meta, on
       }}
     >
       <Box sx={{ width: { xs: '62%', sm: 200, md: 232 }, maxWidth: 260, flexShrink: 0, alignSelf: { xs: 'center', sm: 'auto' } }}>
-        <Cover id={coverId} round={round} radius={5} request={600} alt="" />
+        <Cover id={coverId} hint={coverHint} round={round} radius={5} request={600} alt="" />
       </Box>
       <Box sx={{ minWidth: 0, flex: 1 }}>
         <Typography variant="h2" component="h1" sx={{ fontSize: { xs: '1.9rem', md: '2.9rem' }, wordBreak: 'break-word' }}>

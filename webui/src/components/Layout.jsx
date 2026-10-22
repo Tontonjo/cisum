@@ -1,4 +1,4 @@
-// Cisum web player v0.10.0 - App shell: navigation drawer (desktop), bottom bar (mobile), player.
+// Cisum web player v0.11.1 - App shell: navigation drawer (desktop), bottom bar (mobile), player.
 import { useEffect, useRef, useState } from 'react'
 import { Outlet, NavLink, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import {
@@ -19,7 +19,7 @@ import AutoAwesomeRounded from '@mui/icons-material/AutoAwesomeRounded'
 import AdminPanelSettingsRounded from '@mui/icons-material/AdminPanelSettingsRounded'
 import CloseRounded from '@mui/icons-material/CloseRounded'
 import { useQuery } from '@tanstack/react-query'
-import { getPlaylists } from '../api/library'
+import { getPlaylists, playlistCover } from '../api/library'
 import { coverUrl } from '../api/client'
 import { useUi } from '../store/ui'
 import { usePlayer } from '../store/player'
@@ -30,6 +30,7 @@ import QueueDrawer from './QueueDrawer'
 import AddToPlaylistDialog from './AddToPlaylistDialog'
 import NewPlaylistDialog from './NewPlaylistDialog'
 import SmartPlaylistDialog from './SmartPlaylistDialog'
+import { intentProps } from '../api/preload'
 
 const DRAWER_WIDTH = 280
 
@@ -50,13 +51,15 @@ const MOBILE_NAV = [
   { to: '/playlists', label: 'Playlists', icon: QueueMusicRounded },
 ]
 
-function NavItem({ to, label, icon: Icon, end, image, missing }) {
+/** linkProps: extra link attributes (preloading handlers for playlists). */
+function NavItem({ to, label, icon: Icon, end, image, missing, linkProps }) {
   const { m3 } = useTheme()
   return (
     <Box
       component={NavLink}
       to={to}
       end={end}
+      {...linkProps}
       sx={{
         display: 'flex', alignItems: 'center', gap: 1.5, height: 48, px: 2, borderRadius: 999,
         color: m3.onSurfaceVariant, textDecoration: 'none', fontWeight: 600, fontSize: '0.9rem',
@@ -164,7 +167,7 @@ function Drawer({ session }) {
       </Box>
       <Box sx={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 0.25, pb: 1 }}>
         {playlists.map((p) => (
-          <NavItem key={p.id} to={`/playlists/${p.id}`} label={p.name} image={coverUrl(`pl-${p.id}`, 64)} />
+          <NavItem key={p.id} to={`/playlists/${p.id}`} label={p.name} image={coverUrl(playlistCover(p) || `pl-${p.id}`, 64)} linkProps={intentProps('playlist', p, 64)} />
         ))}
         {!playlists.length && (
           <Typography variant="body2" color="text.secondary" sx={{ px: 2, py: 1 }}>

@@ -1,4 +1,4 @@
-// Cisum web player v0.5.0 - Administration: every playlist of the server, with owner, sharing and deletion.
+// Cisum web player v0.11.1 - Administration: every playlist of the server, with owner, sharing and deletion.
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
@@ -11,7 +11,7 @@ import EditNoteRounded from '@mui/icons-material/EditNoteRounded'
 import DeleteRounded from '@mui/icons-material/DeleteRounded'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { getAllPlaylists } from '../../api/admin'
-import { deletePlaylist } from '../../api/library'
+import { deletePlaylist, playlistCover } from '../../api/library'
 import { useUi } from '../../store/ui'
 import { formatLength, plural } from '../../utils/format'
 import PlaylistAccessDialog from '../PlaylistAccessDialog'
@@ -41,7 +41,7 @@ export default function PlaylistsTab() {
       {isLoading && <LinearProgress />}
       {shown.map((p) => (
         <Box key={p.id} sx={{ display: 'flex', alignItems: 'center', gap: 2, py: 1, px: 1, borderRadius: 3, '&:hover': { bgcolor: 'action.hover' } }}>
-          <Cover id={`pl-${p.id}`} size={48} radius={2} />
+          <Cover id={playlistCover(p)} size={48} radius={2} />
           <Box sx={{ flex: 1, minWidth: 0 }}>
             <Typography variant="subtitle1" noWrap sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               {p.name}

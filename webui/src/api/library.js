@@ -1,4 +1,4 @@
-// Cisum web player v0.10.0 - Library data access and normalization.
+// Cisum web player v0.11.1 - Library data access and normalization.
 // Every song, from either API, is normalized to the same Track shape:
 // { id, title, artist, artistId, album, albumId, duration, track, disc, year, starred, starredAt,
 //   playCount, createdAt, coverArt, missing }
@@ -8,6 +8,20 @@ import config from '../config'
 import { plural, formatLength } from '../utils/format'
 
 // ---------- Normalizers ----------
+
+/**
+ * Cover art id built like the server does: "<kind>-<id>_<content hash>". With the hash the server lets
+ * the browser keep the image for a year without asking again; without it every display costs a request
+ * to the server. Returns null when the server knows the item has no image (no request at all).
+ * item: native API object carrying imageHash / imageAbsent.
+ */
+export function artworkId(kind, id, item) {
+  if (!id || item?.imageAbsent) return null
+  return item?.imageHash ? `${kind}-${id}_${item.imageHash}` : `${kind}-${id}`
+}
+
+/** Cover of a playlist (native API object). */
+export const playlistCover = (p) => artworkId('pl', p?.id, p)
 
 export function trackFromSubsonic(s) {
   return {
@@ -25,7 +39,8 @@ export function trackFromSubsonic(s) {
     starredAt: s.starred || null,
     playCount: s.playCount || 0,
     createdAt: s.created || null,
-    coverArt: s.coverArt || (s.albumId ? `al-${s.albumId}` : null),
+    // Hash-suffixed id from the server; absent when the server knows there is no image
+    coverArt: s.coverArt || null,
     missing: false,
   }
 }
@@ -48,7 +63,7 @@ export function trackFromNative(s, position) {
     starredAt: s.starredAt || null,
     playCount: s.playCount || 0,
     createdAt: s.createdAt || null,
-    coverArt: `mf-${id}`,
+    coverArt: artworkId('mf', id, s),
     missing: !!s.missing,
   }
 }
@@ -66,7 +81,7 @@ export function albumFromSubsonic(a) {
     starredAt: a.starred || null,
     playCount: a.playCount || 0,
     createdAt: a.created || null,
-    coverArt: a.coverArt || `al-${a.id}`,
+    coverArt: a.coverArt || null,
   }
 }
 
@@ -83,7 +98,7 @@ export function albumFromNative(a) {
     starredAt: a.starredAt || null,
     playCount: a.playCount || 0,
     createdAt: a.createdAt || null,
-    coverArt: `al-${a.id}`,
+    coverArt: artworkId('al', a.id, a),
   }
 }
 
@@ -94,7 +109,7 @@ export function artistFromSubsonic(a) {
     albumCount: a.albumCount,
     starred: !!a.starred,
     starredAt: a.starred || null,
-    coverArt: a.coverArt || `ar-${a.id}`,
+    coverArt: a.coverArt || null,
   }
 }
 
@@ -110,7 +125,7 @@ export function artistFromNative(a) {
     playCount: a.playCount || 0,
     starred: !!a.starred,
     starredAt: a.starredAt || null,
-    coverArt: `ar-${a.id}`,
+    coverArt: artworkId('ar', a.id, a),
   }
 }
 
