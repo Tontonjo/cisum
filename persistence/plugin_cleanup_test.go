@@ -1,0 +1,282 @@
+package persistence
+
+import (
+	"context"
+
+	"github.com/navidrome/navidrome/model"
+	"github.com/navidrome/navidrome/model/request"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+)
+
+var _ = Describe("Plugin Cleanup", func() {
+	var pluginRepo model.PluginRepository
+	var userRepo model.UserRepository
+	var libraryRepo model.LibraryRepository
+	var ctx context.Context
+
+	BeforeEach(func() {
+		ctx = request.WithUser(GinkgoT().Context(), model.User{ID: "admin", UserName: "admin", IsAdmin: true})
+		db := GetDBXBuilder()
+		pluginRepo = NewPluginRepository(db)
+		userRepo = NewUserRepository(db)
+		libraryRepo = NewLibraryRepository(db)
+
+		// Clean up any existing plugins
+		all, _ := pluginRepo.GetAll(ctx)
+		for _, p := range all {
+			_ = pluginRepo.Delete(ctx, p.ID)
+		}
+	})
+
+	AfterEach(func() {
+		// Clean up after tests
+		all, _ := pluginRepo.GetAll(ctx)
+		for _, p := range all {
+			_ = pluginRepo.Delete(ctx, p.ID)
+		}
+	})
+
+	Describe("UserRepository.Delete", func() {
+		It("cleans up plugin references for users deleted before a later id fails", func() {
+			Expect(userRepo.Put(ctx, &model.User{ID: "bulk-1", UserName: "bulk-1", NewPassword: "x"})).To(Succeed())
+			DeferCleanup(func() { _ = userRepo.Delete(ctx, "bulk-1") })
+			Expect(pluginRepo.Put(ctx, &model.Plugin{
+				ID: "bulk-plugin", Path: "/plugins/bulk.wasm", Manifest: `{"name":"bulk"}`, SHA256: "def456",
+				Users: `["bulk-1","other"]`, Enabled: true,
+			})).To(Succeed())
+
+			Expect(userRepo.Delete(ctx, "bulk-1", "does-not-exist")).To(MatchError(model.ErrNotFound))
+
+			updated, err := pluginRepo.Get(ctx, "bulk-plugin")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(updated.Users).To(Equal(`["other"]`))
+		})
+	})
+
+	Describe("cleanupPluginUserReferences", func() {
+		It("removes user ID from plugin users array", func() {
+			// Create a plugin with multiple users
+			plugin := &model.Plugin{
+				ID:       "test-plugin",
+				Path:     "/plugins/test.wasm",
+				Manifest: `{"name":"test"}`,
+				SHA256:   "abc123",
+				Users:    `["user1","user2","user3"]`,
+				Enabled:  true,
+			}
+			Expect(pluginRepo.Put(ctx, plugin)).To(Succeed())
+
+			// Clean up user2 reference
+			db := GetDBXBuilder()
+			Expect(cleanupPluginUserReferences(db, "user2")).To(Succeed())
+
+			// Verify user2 was removed
+			updated, err := pluginRepo.Get(ctx, "test-plugin")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(updated.Users).To(Equal(`["user1","user3"]`))
+			Expect(updated.Enabled).To(BeTrue()) // Still has users, should remain enabled
+		})
+
+		It("auto-disables plugin when last permitted user is removed", func() {
+			// Create a plugin that requires users permission with only one user
+			plugin := &model.Plugin{
+				ID:       "user-plugin",
+				Path:     "/plugins/user.wasm",
+				Manifest: `{"name":"user-plugin","permissions":{"users":{}}}`,
+				SHA256:   "def456",
+				Users:    `["only-user"]`,
+				AllUsers: false,
+				Enabled:  true,
+			}
+			Expect(pluginRepo.Put(ctx, plugin)).To(Succeed())
+
+			// Remove the only user
+			db := GetDBXBuilder()
+			Expect(cleanupPluginUserReferences(db, "only-user")).To(Succeed())
+
+			// Verify plugin was auto-disabled
+			updated, err := pluginRepo.Get(ctx, "user-plugin")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(updated.Users).To(Equal(`[]`))
+			Expect(updated.Enabled).To(BeFalse())
+		})
+
+		It("does not disable plugin when allUsers is true", func() {
+			plugin := &model.Plugin{
+				ID:       "all-users-plugin",
+				Path:     "/plugins/all.wasm",
+				Manifest: `{"name":"all-users","permissions":{"users":{}}}`,
+				SHA256:   "ghi789",
+				Users:    `["user1"]`,
+				AllUsers: true,
+				Enabled:  true,
+			}
+			Expect(pluginRepo.Put(ctx, plugin)).To(Succeed())
+
+			// Remove the user (but allUsers is true)
+			db := GetDBXBuilder()
+			Expect(cleanupPluginUserReferences(db, "user1")).To(Succeed())
+
+			// Plugin should still be enabled because allUsers is true
+			updated, err := pluginRepo.Get(ctx, "all-users-plugin")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(updated.Enabled).To(BeTrue())
+		})
+
+		It("does not affect plugins without users permission requirement", func() {
+			plugin := &model.Plugin{
+				ID:       "no-users-perm",
+				Path:     "/plugins/noperm.wasm",
+				Manifest: `{"name":"no-perm"}`, // No permissions.users in manifest
+				SHA256:   "jkl012",
+				Users:    `["user1"]`,
+				Enabled:  true,
+			}
+			Expect(pluginRepo.Put(ctx, plugin)).To(Succeed())
+
+			// Remove the user
+			db := GetDBXBuilder()
+			Expect(cleanupPluginUserReferences(db, "user1")).To(Succeed())
+
+			// Plugin should still be enabled (no users permission requirement)
+			updated, err := pluginRepo.Get(ctx, "no-users-perm")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(updated.Users).To(Equal(`[]`))
+			Expect(updated.Enabled).To(BeTrue())
+		})
+	})
+
+	Describe("cleanupPluginLibraryReferences", func() {
+		It("removes library ID from plugin libraries array", func() {
+			// Create a plugin with multiple libraries
+			plugin := &model.Plugin{
+				ID:        "lib-plugin",
+				Path:      "/plugins/lib.wasm",
+				Manifest:  `{"name":"lib-plugin"}`,
+				SHA256:    "mno345",
+				Libraries: `[1,2,3]`,
+				Enabled:   true,
+			}
+			Expect(pluginRepo.Put(ctx, plugin)).To(Succeed())
+
+			// Clean up library 2 reference
+			db := GetDBXBuilder()
+			Expect(cleanupPluginLibraryReferences(db, 2)).To(Succeed())
+
+			// Verify library 2 was removed
+			updated, err := pluginRepo.Get(ctx, "lib-plugin")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(updated.Libraries).To(Equal(`[1,3]`))
+		})
+
+		It("auto-disables plugin when last permitted library is removed", func() {
+			// Create a plugin that requires library permission with only one library
+			plugin := &model.Plugin{
+				ID:           "lib-only-plugin",
+				Path:         "/plugins/libonly.wasm",
+				Manifest:     `{"name":"lib-only","permissions":{"library":{}}}`,
+				SHA256:       "pqr678",
+				Libraries:    `[99]`,
+				AllLibraries: false,
+				Enabled:      true,
+			}
+			Expect(pluginRepo.Put(ctx, plugin)).To(Succeed())
+
+			// Remove the only library
+			db := GetDBXBuilder()
+			Expect(cleanupPluginLibraryReferences(db, 99)).To(Succeed())
+
+			// Verify plugin was auto-disabled
+			updated, err := pluginRepo.Get(ctx, "lib-only-plugin")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(updated.Libraries).To(Equal(`[]`))
+			Expect(updated.Enabled).To(BeFalse())
+		})
+
+		It("does not disable plugin when allLibraries is true", func() {
+			plugin := &model.Plugin{
+				ID:           "all-libs-plugin",
+				Path:         "/plugins/alllibs.wasm",
+				Manifest:     `{"name":"all-libs","permissions":{"library":{}}}`,
+				SHA256:       "stu901",
+				Libraries:    `[1]`,
+				AllLibraries: true,
+				Enabled:      true,
+			}
+			Expect(pluginRepo.Put(ctx, plugin)).To(Succeed())
+
+			// Remove the library (but allLibraries is true)
+			db := GetDBXBuilder()
+			Expect(cleanupPluginLibraryReferences(db, 1)).To(Succeed())
+
+			// Plugin should still be enabled
+			updated, err := pluginRepo.Get(ctx, "all-libs-plugin")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(updated.Enabled).To(BeTrue())
+		})
+	})
+
+	Describe("User Delete integration", func() {
+		It("cleans up plugin references when user is deleted", func() {
+			// Create a test user
+			user := &model.User{
+				ID:       "test-delete-user",
+				UserName: "plugin-cleanup-test-user",
+				IsAdmin:  false,
+			}
+			user.NewPassword = "password123"
+			Expect(userRepo.Put(ctx, user)).To(Succeed())
+
+			// Create a plugin referencing this user
+			plugin := &model.Plugin{
+				ID:       "user-ref-plugin",
+				Path:     "/plugins/userref.wasm",
+				Manifest: `{"name":"user-ref"}`,
+				SHA256:   "xyz123",
+				Users:    `["test-delete-user","other-user"]`,
+				Enabled:  true,
+			}
+			Expect(pluginRepo.Put(ctx, plugin)).To(Succeed())
+
+			// Delete the user
+			Expect(userRepo.Delete(ctx, "test-delete-user")).To(Succeed())
+
+			// Verify user was removed from plugin
+			updated, err := pluginRepo.Get(ctx, "user-ref-plugin")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(updated.Users).To(Equal(`["other-user"]`))
+		})
+	})
+
+	Describe("Library Delete integration", func() {
+		It("cleans up plugin references when library is deleted", func() {
+			// Create a test library (ID > 1 since ID 1 cannot be deleted)
+			library := &model.Library{
+				ID:   99,
+				Name: "Test Library",
+				Path: "/tmp/test-lib",
+			}
+			Expect(libraryRepo.Put(ctx, library)).To(Succeed())
+
+			// Create a plugin referencing this library
+			plugin := &model.Plugin{
+				ID:        "lib-ref-plugin",
+				Path:      "/plugins/libref.wasm",
+				Manifest:  `{"name":"lib-ref"}`,
+				SHA256:    "abc789",
+				Libraries: `[99,1]`,
+				Enabled:   true,
+			}
+			Expect(pluginRepo.Put(ctx, plugin)).To(Succeed())
+
+			// Delete the library
+			Expect(libraryRepo.Delete(ctx, 99)).To(Succeed())
+
+			// Verify library was removed from plugin
+			updated, err := pluginRepo.Get(ctx, "lib-ref-plugin")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(updated.Libraries).To(Equal(`[1]`))
+		})
+	})
+})

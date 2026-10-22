@@ -1,0 +1,19 @@
+# Cisum v0.10.2
+.DS_Store
+.idea
+.vscode
+/cisum
+/cisum.exe
+/data
+/music
+/cache
+*.db
+*.db-*
+cisum.toml
+coverage.out
+*.test
+webui/node_modules
+webui/build/*
+!webui/build/.gitkeep
+/plugins/testdata/.wazero-cache/
+/plugins/testdata/*.stage/

@@ -1,0 +1,326 @@
+package persistence
+
+import (
+	"context"
+	"database/sql"
+	"slices"
+
+	. "github.com/Masterminds/squirrel"
+	"github.com/deluan/rest"
+	"github.com/navidrome/navidrome/log"
+	"github.com/navidrome/navidrome/model"
+	"github.com/navidrome/navidrome/utils/slice"
+)
+
+type playlistTrackRepository struct {
+	sqlRepository
+	playlistId   string
+	playlist     *model.Playlist
+	playlistRepo *playlistRepository
+}
+
+type dbPlaylistTrack struct {
+	dbMediaFile
+	*model.PlaylistTrack `structs:",flatten"`
+}
+
+func (t *dbPlaylistTrack) PostScan() error {
+	if err := t.dbMediaFile.PostScan(); err != nil {
+		return err
+	}
+	t.PlaylistTrack.MediaFile = *t.dbMediaFile.MediaFile
+	t.PlaylistTrack.MediaFile.ID = t.MediaFileID
+	return nil
+}
+
+type dbPlaylistTracks []dbPlaylistTrack
+
+func (t dbPlaylistTracks) toModels() model.PlaylistTracks {
+	return slice.Map(t, func(trk dbPlaylistTrack) model.PlaylistTrack {
+		return *trk.PlaylistTrack
+	})
+}
+
+func (r *playlistRepository) Tracks(ctx context.Context, playlistId string, refreshSmartPlaylist bool) model.PlaylistTrackRepository {
+	p := &playlistTrackRepository{}
+	p.playlistRepo = r
+	p.playlistId = playlistId
+	p.db = r.db
+	p.tableName = "playlist_tracks"
+	p.registerModel(&model.PlaylistTrack{}, map[string]filterFunc{
+		"missing":    booleanFilter,
+		"library_id": libraryIdFilter,
+	})
+	p.setSortMappings(
+		map[string]string{
+			"id":           "playlist_tracks.id",
+			"artist":       "order_artist_name",
+			"album_artist": "order_album_artist_name",
+			"album":        "order_album_name, album_id, disc_number, track_number, order_artist_name, " + naturalSort("f.title"),
+			"title":        "order_title",
+			"random":       "random()",
+			// To make sure these fields will be whitelisted
+			"duration": "duration",
+			"year":     "year",
+			"bpm":      "bpm",
+			"channels": "channels",
+		},
+		"f") // TODO I don't like this solution, but I won't change it now as it's not the focus of BFR.
+
+	pls, err := r.Get(ctx, playlistId)
+	if err != nil {
+		log.Warn(ctx, "Error getting playlist's tracks", "playlistId", playlistId, err)
+		return nil
+	}
+	if refreshSmartPlaylist {
+		r.refreshSmartPlaylist(ctx, pls)
+	}
+	p.playlist = pls
+	return p
+}
+
+func (r *playlistTrackRepository) CountAll(ctx context.Context, options ...model.QueryOptions) (int64, error) {
+	query := Select().
+		Join("media_file f on f.id = media_file_id").
+		Where(Eq{"playlist_id": r.playlistId})
+	query = r.applyLibraryFilter(ctx, query, "f")
+	return r.count(ctx, query, options...)
+}
+
+func (r *playlistTrackRepository) Count(ctx context.Context, options ...rest.QueryOptions) (int64, error) {
+	query := Select().
+		LeftJoin("media_file f on f.id = media_file_id").
+		Where(Eq{"playlist_id": r.playlistId})
+	query = r.applyLibraryFilter(ctx, query, "f")
+	return r.count(ctx, query, r.parseRestOptions(ctx, options...))
+}
+
+func (r *playlistTrackRepository) Read(ctx context.Context, id string) (*model.PlaylistTrack, error) {
+	userID := loggedUser(ctx).ID
+	sel := r.newSelect(ctx).
+		LeftJoin("annotation on ("+
+			"annotation.item_id = media_file_id"+
+			" AND annotation.item_type = 'media_file'"+
+			" AND annotation.user_id = '"+userID+"')").
+		Columns(
+			"coalesce(starred, 0) as starred",
+			"coalesce(play_count, 0) as play_count",
+			"coalesce(rating, 0) as rating",
+			"starred_at",
+			"play_date",
+			"rated_at",
+			"f.*",
+			"playlist_tracks.*",
+		).
+		Join("media_file f on f.id = media_file_id").
+		Where(And{Eq{"playlist_id": r.playlistId}, Eq{"playlist_tracks.id": id}})
+	sel = r.applyLibraryFilter(ctx, sel, "f")
+	var trk dbPlaylistTrack
+	err := r.queryOne(ctx, sel, &trk)
+	return trk.PlaylistTrack, err
+}
+
+func (r *playlistTrackRepository) GetAll(ctx context.Context, options ...model.QueryOptions) (model.PlaylistTracks, error) {
+	tracks, err := r.playlistRepo.loadTracks(ctx, r.newSelect(ctx, options...), r.playlistId)
+	if err != nil {
+		return nil, err
+	}
+	return tracks, err
+}
+
+func (r *playlistTrackRepository) GetCursor(ctx context.Context, options ...model.QueryOptions) (model.PlaylistTrackCursor, error) {
+	sel := r.playlistRepo.tracksQuery(ctx, r.newSelect(ctx, options...), r.playlistId)
+	cursor, err := queryWithStableResults[dbPlaylistTrack](ctx, r.sqlRepository, sel)
+	if err != nil {
+		return nil, err
+	}
+	tracks := wrapCursor(cursor, func(t dbPlaylistTrack) *model.PlaylistTrack {
+		return t.PlaylistTrack
+	})
+	return model.PlaylistTrackCursor(hydrateCursor(tracks, func(batch []model.PlaylistTrack) {
+		hydratePlaylistTrackArtwork(ctx, r.db, batch)
+	})), nil
+}
+
+// GetMediaFileIDs returns the tracks' song ids, for callers that need every id but no track data.
+func (r *playlistTrackRepository) GetMediaFileIDs(ctx context.Context, options ...model.QueryOptions) ([]string, error) {
+	query := r.newSelect(ctx, options...).Columns("media_file_id").
+		Join("media_file f on f.id = media_file_id").
+		Where(Eq{"playlist_id": r.playlistId})
+	query = r.applyLibraryFilter(ctx, query, "f")
+	var ids []string
+	if err := r.queryAllSlice(ctx, query, &ids); err != nil {
+		return nil, err
+	}
+	return ids, nil
+}
+
+func (r *playlistTrackRepository) GetAlbumIDs(ctx context.Context, options ...model.QueryOptions) ([]string, error) {
+	query := r.newSelect(ctx, options...).Columns("distinct mf.album_id").
+		Join("media_file mf on mf.id = media_file_id").
+		Where(Eq{"playlist_id": r.playlistId})
+	query = r.applyLibraryFilter(ctx, query, "mf")
+	var ids []string
+	err := r.queryAllSlice(ctx, query, &ids)
+	if err != nil {
+		return nil, err
+	}
+	return ids, nil
+}
+
+func (r *playlistTrackRepository) ReadAll(ctx context.Context, options ...rest.QueryOptions) ([]model.PlaylistTrack, error) {
+	return r.GetAll(ctx, r.parseRestOptions(ctx, options...))
+}
+
+func (r *playlistTrackRepository) Add(ctx context.Context, mediaFileIds []string) (int, error) {
+	if len(mediaFileIds) > 0 {
+		log.Debug(ctx, "Adding songs to playlist", "playlistId", r.playlistId, "mediaFileIds", mediaFileIds)
+	} else {
+		return 0, nil
+	}
+
+	// Get next pos (ID) in playlist
+	sq := r.newSelect(ctx).Columns("max(id) as max").Where(Eq{"playlist_id": r.playlistId})
+	var res struct{ Max sql.NullInt32 }
+	if err := r.queryOne(ctx, sq, &res); err != nil {
+		return 0, err
+	}
+
+	return r.playlistRepo.addTracks(ctx, r.playlistId, int(res.Max.Int32+1), mediaFileIds)
+}
+
+// Insert adds tracks before the 1-based position pos, shifting the following entries down; a
+// position past the end appends. Callers must run it in a transaction.
+func (r *playlistTrackRepository) Insert(ctx context.Context, mediaFileIds []string, pos int) (int, error) {
+	if len(mediaFileIds) == 0 {
+		return 0, nil
+	}
+	pos = max(pos, 1)
+	n := len(mediaFileIds)
+	// Negate while shifting, so no intermediate row hits the unique (playlist_id, id) index.
+	_, err := r.executeSQL(ctx, Expr(`UPDATE playlist_tracks SET id = -(id + ?) WHERE playlist_id = ? AND id >= ?`, n, r.playlistId, pos))
+	if err != nil {
+		return 0, err
+	}
+	res, err := r.executeSQL(ctx, Expr(`UPDATE playlist_tracks SET id = -id WHERE playlist_id = ? AND id < 0`, r.playlistId))
+	if err != nil {
+		return 0, err
+	}
+	if res == 0 {
+		return r.Add(ctx, mediaFileIds)
+	}
+	inserted, err := r.playlistRepo.addTracks(ctx, r.playlistId, pos, mediaFileIds)
+	if err != nil || inserted == n {
+		return inserted, err
+	}
+	// The shift above reserved a slot per requested id, so ids dropped by keepAccessible
+	// leave a hole. Close it.
+	return inserted, r.playlistRepo.renumber(ctx, r.playlistId)
+}
+
+func (r *playlistTrackRepository) addMediaFileIds(ctx context.Context, cond Sqlizer) (int, error) {
+	sq := Select("id").From("media_file").Where(cond).OrderBy("album_artist, album, release_date, disc_number, track_number")
+	var ids []string
+	err := r.queryAllSlice(ctx, sq, &ids)
+	if err != nil {
+		log.Error(ctx, "Error getting tracks to add to playlist", err)
+		return 0, err
+	}
+	return r.Add(ctx, ids)
+}
+
+func (r *playlistTrackRepository) AddAlbums(ctx context.Context, albumIds []string) (int, error) {
+	return r.addMediaFileIds(ctx, Eq{"album_id": albumIds})
+}
+
+func (r *playlistTrackRepository) AddArtists(ctx context.Context, artistIds []string) (int, error) {
+	// Match by album-artist participation, not the deprecated album_artist_id
+	// column, which only holds the first album artist.
+	return r.addMediaFileIds(ctx, ParticipantIDFilter("media_file", artistIds, model.RoleAlbumArtist))
+}
+
+func (r *playlistTrackRepository) AddDiscs(ctx context.Context, discs []model.DiscID) (int, error) {
+	if len(discs) == 0 {
+		return 0, nil
+	}
+	var clauses Or
+	for _, d := range discs {
+		clauses = append(clauses, And{Eq{"album_id": d.AlbumID}, Eq{"release_date": d.ReleaseDate}, Eq{"disc_number": d.DiscNumber}})
+	}
+	return r.addMediaFileIds(ctx, clauses)
+}
+
+// deleteChunkSize keeps each DELETE under SQLITE_MAX_VARIABLE_NUMBER, matching addTracks.
+const deleteChunkSize = 200
+
+func (r *playlistTrackRepository) Delete(ctx context.Context, ids ...string) error {
+	for chunk := range slices.Chunk(ids, deleteChunkSize) {
+		if err := r.delete(ctx, And{Eq{"playlist_id": r.playlistId}, Eq{"id": chunk}}); err != nil {
+			return err
+		}
+	}
+
+	return r.playlistRepo.renumber(ctx, r.playlistId)
+}
+
+func (r *playlistTrackRepository) DeleteAll(ctx context.Context) error {
+	err := r.delete(ctx, Eq{"playlist_id": r.playlistId})
+	if err != nil {
+		return err
+	}
+
+	return r.playlistRepo.renumber(ctx, r.playlistId)
+}
+
+// Reorder moves a track from pos to newPos, shifting other tracks accordingly. newPos is clamped
+// to the playlist; a pos outside it is ErrNotFound, since shifting around it would leave a gap.
+func (r *playlistTrackRepository) Reorder(ctx context.Context, pos int, newPos int) error {
+	var res struct{ Max sql.NullInt32 }
+	if err := r.queryOne(ctx, r.newSelect(ctx).Columns("max(id) as max").Where(Eq{"playlist_id": r.playlistId}), &res); err != nil {
+		return err
+	}
+	last := int(res.Max.Int32)
+	if pos < 1 || pos > last {
+		return model.ErrNotFound
+	}
+	newPos = min(max(newPos, 1), last)
+	if pos == newPos {
+		return nil
+	}
+	pid := r.playlistId
+
+	// Step 1: Move the source track out of the way (temporary sentinel value)
+	_, err := r.executeSQL(ctx, Expr(
+		`UPDATE playlist_tracks SET id = -999999 WHERE playlist_id = ? AND id = ?`, pid, pos))
+	if err != nil {
+		return err
+	}
+
+	// Step 2: Shift the affected range using negative values to avoid unique constraint violations
+	if pos < newPos {
+		_, err = r.executeSQL(ctx, Expr(
+			`UPDATE playlist_tracks SET id = -(id - 1) WHERE playlist_id = ? AND id > ? AND id <= ?`,
+			pid, pos, newPos))
+	} else {
+		_, err = r.executeSQL(ctx, Expr(
+			`UPDATE playlist_tracks SET id = -(id + 1) WHERE playlist_id = ? AND id >= ? AND id < ?`,
+			pid, newPos, pos))
+	}
+	if err != nil {
+		return err
+	}
+
+	// Step 3: Flip the shifted range back to positive
+	_, err = r.executeSQL(ctx, Expr(
+		`UPDATE playlist_tracks SET id = -id WHERE playlist_id = ? AND id < 0 AND id != -999999`, pid))
+	if err != nil {
+		return err
+	}
+
+	// Step 4: Place the source track at its new position
+	_, err = r.executeSQL(ctx, Expr(
+		`UPDATE playlist_tracks SET id = ? WHERE playlist_id = ? AND id = -999999`, newPos, pid))
+	return err
+}
+
+var _ model.PlaylistTrackRepository = (*playlistTrackRepository)(nil)

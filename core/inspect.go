@@ -1,0 +1,60 @@
+package core
+
+import (
+	"path/filepath"
+
+	"github.com/navidrome/navidrome/core/storage"
+	"github.com/navidrome/navidrome/log"
+	"github.com/navidrome/navidrome/model"
+	"github.com/navidrome/navidrome/model/metadata"
+)
+
+type InspectOutput struct {
+	File       string           `json:"file"`
+	RawTags    model.RawTags    `json:"rawTags"`
+	MappedTags *model.MediaFile `json:"mappedTags,omitempty"`
+}
+
+func Inspect(filePath string, lib model.Library, folderId string) (*InspectOutput, error) {
+	path, file := filepath.Split(filePath)
+
+	s, err := storage.For(path)
+	if err != nil {
+		return nil, err
+	}
+
+	fs, err := s.FS()
+	if err != nil {
+		return nil, err
+	}
+
+	tags, err := fs.ReadTags(file)
+	if err != nil {
+		return nil, err
+	}
+
+	tag, ok := tags[file]
+	if !ok {
+		log.Error("Could not get tags for path", "path", filePath)
+		return nil, model.ErrNotFound
+	}
+
+	md := metadata.New(scannerPath(lib, filePath), tag)
+	result := &InspectOutput{
+		File:       filePath,
+		RawTags:    tags[file].Tags,
+		MappedTags: new(md.ToMediaFile(lib, folderId)),
+	}
+
+	return result, nil
+}
+
+// scannerPath returns the path the scanner uses for the file (relative to its library), so
+// folder-based PIDs match the DB. Files outside the library keep their absolute path.
+func scannerPath(lib model.Library, filePath string) string {
+	absPath, err := filepath.Abs(filePath)
+	if err != nil || lib.Path == "" {
+		return filePath
+	}
+	return model.LibraryRelativePath(lib.Path, absPath)
+}

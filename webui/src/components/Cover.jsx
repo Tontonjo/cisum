@@ -1,0 +1,32 @@
+// Cisum web player v0.7.0 - Cover art image with a neutral placeholder.
+import { useEffect, useState } from 'react'
+import { Box, useTheme } from '@mui/material'
+import MusicNoteRounded from '@mui/icons-material/MusicNoteRounded'
+import { coverUrl } from '../api/client'
+
+/**
+ * size: number (px) for fixed covers, or undefined to fill the parent width (square).
+ * icon: placeholder icon component (default music note); version: cache buster for replaced images.
+ */
+export default function Cover({ id, size, radius = 3, request, alt = '', sx, round = false, icon: Icon = MusicNoteRounded, version }) {
+  const { m3 } = useTheme()
+  const [failed, setFailed] = useState(false)
+  useEffect(() => setFailed(false), [id, version])
+  const px = request || (typeof size === 'number' ? Math.min(Math.ceil(size * 2 / 100) * 100, 600) : 400)
+  const src = id && !failed ? coverUrl(id, px, version) : null
+  const dims = typeof size === 'number' ? { width: size, height: size } : { width: '100%', aspectRatio: '1 / 1' }
+  return (
+    <Box
+      sx={{
+        ...dims, flexShrink: 0, borderRadius: round ? '50%' : radius, overflow: 'hidden', position: 'relative',
+        bgcolor: m3.surfaceContainerHighest, color: m3.onSurfaceVariant, display: 'grid', placeItems: 'center', ...sx,
+      }}
+    >
+      {src ? (
+        <Box component="img" src={src} alt={alt} loading="lazy" onError={() => setFailed(true)} sx={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+      ) : (
+        <Icon sx={{ fontSize: typeof size === 'number' ? size * 0.4 : 48, opacity: 0.6 }} />
+      )}
+    </Box>
+  )
+}

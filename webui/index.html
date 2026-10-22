@@ -1,0 +1,51 @@
+<!doctype html>
+<!-- Cisum web player v0.10.2 -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="description" content="Cisum music server {{.Version}}" />
+    <meta name="theme-color" content="#1a1c22" />
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta property="og:site_name" content="Cisum" />
+    <meta property="og:url" content="{{ .ShareURL }}" />
+    <meta property="og:title" content="{{ .ShareDescription }}" />
+    <meta property="og:image" content="{{ .ShareImageURL }}" />
+    <title>Cisum</title>
+    <script>
+      window.__APP_CONFIG__ = {{ .AppConfig }}
+    </script>
+    <script>
+      window.__SHARE_INFO__ = {{ .ShareInfo }}
+    </script>
+    <script>
+      // Start-up watchdog: if the application never starts (script not loaded, error before the
+      // first render), show a message instead of a blank page.
+      (function () {
+        var errors = []
+        window.addEventListener('error', function (e) {
+          var t = e.target
+          errors.push(t && t !== window && (t.src || t.href) ? 'Could not load ' + (t.src || t.href) : String(e.message))
+        }, true)
+        window.addEventListener('unhandledrejection', function (e) { errors.push(String(e.reason && (e.reason.message || e.reason))) })
+        function check() {
+          if (window.__cisumStarted) return
+          var root = document.getElementById('root')
+          if (!root || root.childElementCount) return
+          root.innerHTML = '<div role="alert" style="font-family:system-ui,sans-serif;max-width:680px;margin:64px auto;padding:0 16px">' +
+            '<h1 style="font-weight:500">Cisum did not start</h1><p>Reload the page. If it happens again, empty the browser cache for this site.</p>' +
+            '<pre id="cisum-boot-errors" style="white-space:pre-wrap;font-size:12px"></pre>' +
+            '<button type="button" onclick="location.reload()" style="padding:10px 20px;border-radius:999px;border:1px solid #74777f;background:none;cursor:pointer;font:inherit">Reload</button></div>'
+          document.getElementById('cisum-boot-errors').textContent = errors.join('\n')
+        }
+        window.addEventListener('load', function () { setTimeout(check, errors.length ? 0 : 8000) })
+      })()
+    </script>
+  </head>
+  <body>
+    <noscript>Cisum needs JavaScript enabled.</noscript>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

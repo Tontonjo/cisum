@@ -1,0 +1,282 @@
+package playlists
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"net/url"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/navidrome/navidrome/conf"
+	"github.com/navidrome/navidrome/log"
+	"github.com/navidrome/navidrome/model"
+	"github.com/navidrome/navidrome/model/request"
+	"github.com/navidrome/navidrome/utils/slice"
+	"golang.org/x/text/unicode/norm"
+)
+
+func (s *playlists) parseM3U(ctx context.Context, pls *model.Playlist, folder *model.Folder, reader io.Reader) error {
+	mediaFileRepository := s.ds.MediaFile()
+	resolver, err := newPathResolver(ctx, s.ds)
+	if err != nil {
+		return err
+	}
+	var mfs model.MediaFiles
+	// Chunked so a huge playlist is not held in memory at once. Each line yields up to
+	// 4 lookup candidates (NFC/NFD × raw/lowercase), far below SQLite's 32766 variables.
+	for lines := range slice.CollectChunks(slice.LinesFrom(reader), 100) {
+		filteredLines := make([]string, 0, len(lines))
+		for _, line := range lines {
+			line := strings.TrimSpace(line)
+			if after, ok := strings.CutPrefix(line, "#PLAYLIST:"); ok {
+				pls.Name = after
+				continue
+			}
+			if after, ok := strings.CutPrefix(line, "#EXTALBUMARTURL:"); ok {
+				owner, _ := request.UserFrom(ctx)
+				pls.ExternalImageURL = resolveImageURL(after, folder, resolver.matcher, owner)
+				continue
+			}
+			// Skip empty lines and extended info
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			if after, ok := strings.CutPrefix(line, "file://"); ok {
+				line = after
+				line, _ = url.PathUnescape(line)
+			}
+			if !model.IsAudioFile(line) {
+				continue
+			}
+			filteredLines = append(filteredLines, line)
+		}
+		resolvedPaths, err := resolver.resolvePaths(ctx, folder, filteredLines)
+		if err != nil {
+			log.Warn(ctx, "Error resolving paths in playlist", "playlist", pls.Name, err)
+			continue
+		}
+
+		// SQLite comparisons do not perform Unicode normalization, and filesystem normalization
+		// differs across platforms (macOS often yields NFD, while Linux/Windows typically use NFC).
+		// Generate lookup candidates for both forms so playlist entries match DB paths regardless
+		// of the original normalization. See https://github.com/navidrome/navidrome/issues/4884
+		//
+		// We also include the original (non-lowercased) paths because SQLite's COLLATE NOCASE
+		// only handles ASCII case-insensitivity. Non-ASCII characters like fullwidth letters
+		// (e.g., ＡＢＣＤ vs ａｂｃｄ) are not matched case-insensitively by NOCASE.
+		lookupCandidates := make([]string, 0, len(resolvedPaths)*4)
+		seen := make(map[string]struct{}, len(resolvedPaths)*4)
+		for _, path := range resolvedPaths {
+			// Add original paths first (for exact matching of non-ASCII characters)
+			nfcRaw := norm.NFC.String(path)
+			if _, ok := seen[nfcRaw]; !ok {
+				seen[nfcRaw] = struct{}{}
+				lookupCandidates = append(lookupCandidates, nfcRaw)
+			}
+			nfdRaw := norm.NFD.String(path)
+			if _, ok := seen[nfdRaw]; !ok {
+				seen[nfdRaw] = struct{}{}
+				lookupCandidates = append(lookupCandidates, nfdRaw)
+			}
+
+			// Add lowercased paths (for ASCII case-insensitive matching via NOCASE)
+			nfc := strings.ToLower(nfcRaw)
+			if _, ok := seen[nfc]; !ok {
+				seen[nfc] = struct{}{}
+				lookupCandidates = append(lookupCandidates, nfc)
+			}
+			nfd := strings.ToLower(nfdRaw)
+			if _, ok := seen[nfd]; !ok {
+				seen[nfd] = struct{}{}
+				lookupCandidates = append(lookupCandidates, nfd)
+			}
+		}
+
+		found, err := mediaFileRepository.FindByPaths(ctx, lookupCandidates)
+		if err != nil {
+			log.Warn(ctx, "Error reading files from DB", "playlist", pls.Name, err)
+			continue
+		}
+
+		// Build lookup map with library-qualified keys, normalized for comparison.
+		// Canonicalize to NFC so NFD/NFC become comparable.
+		existing := make(map[string]int, len(found))
+		for idx := range found {
+			key := fmt.Sprintf("%d:%s", found[idx].LibraryID, strings.ToLower(norm.NFC.String(found[idx].Path)))
+			existing[key] = idx
+		}
+
+		// Find media files in the order of the resolved paths, to keep playlist order.
+		// Both `existing` keys and `resolvedPaths` use the library-qualified format "libraryID:relativePath",
+		// so normalizing the full string produces matching keys (digits and ':' are ASCII-invariant).
+		for _, path := range resolvedPaths {
+			key := strings.ToLower(norm.NFC.String(path))
+			idx, ok := existing[key]
+			if ok {
+				mfs = append(mfs, found[idx])
+			} else {
+				// Prefer logging a composed representation when possible to avoid confusing output
+				// with decomposed combining marks.
+				log.Warn(ctx, "Path in playlist not found", "playlist", pls.Name, "path", norm.NFC.String(path))
+			}
+		}
+	}
+	if pls.Name == "" {
+		pls.Name = time.Now().Format(time.RFC3339)
+	}
+	pls.Tracks = nil
+	pls.AddMediaFiles(mfs)
+
+	return nil
+}
+
+// pathResolution holds the result of resolving a playlist path to a library-relative path.
+type pathResolution struct {
+	absolutePath string
+	libraryPath  string
+	libraryID    int
+	valid        bool
+}
+
+// ToQualifiedString converts the path resolution to a library-qualified string with forward slashes.
+// Format: "libraryID:relativePath" with forward slashes for path separators.
+func (r pathResolution) ToQualifiedString() (string, error) {
+	if !r.valid {
+		return "", fmt.Errorf("invalid path resolution")
+	}
+	relativePath, err := filepath.Rel(r.libraryPath, r.absolutePath)
+	if err != nil {
+		return "", err
+	}
+	// Convert path separators to forward slashes
+	return fmt.Sprintf("%d:%s", r.libraryID, filepath.ToSlash(relativePath)), nil
+}
+
+// pathResolver handles path resolution logic for playlist imports.
+type pathResolver struct {
+	matcher *model.LibraryMatcher
+}
+
+// newPathResolver creates a pathResolver with libraries loaded from the datastore.
+func newPathResolver(ctx context.Context, ds model.DataStore) (*pathResolver, error) {
+	libs, err := ds.Library().GetAll(ctx)
+	if err != nil {
+		return nil, err
+	}
+	matcher := model.NewLibraryMatcher(libs)
+	return &pathResolver{matcher: matcher}, nil
+}
+
+// resolvePath determines the absolute path and library path for a playlist entry.
+// For absolute paths, it uses them directly.
+// For relative paths, it resolves them relative to the playlist's folder location.
+// Example: playlist at /music/playlists/test.m3u with line "../songs/abc.mp3"
+//
+//	resolves to /music/songs/abc.mp3
+func (r *pathResolver) resolvePath(line string, folder *model.Folder) pathResolution {
+	var absolutePath string
+	if folder != nil && !filepath.IsAbs(line) {
+		// Resolve relative path to absolute path based on playlist location
+		absolutePath = filepath.Clean(filepath.Join(folder.AbsolutePath(), line))
+	} else {
+		// Use absolute path directly after cleaning
+		absolutePath = filepath.Clean(line)
+	}
+
+	return r.findInLibraries(absolutePath)
+}
+
+// findInLibraries matches an absolute path against all known libraries and returns
+// a pathResolution with the library information. Returns an invalid resolution if
+// the path is not found in any library.
+func (r *pathResolver) findInLibraries(absolutePath string) pathResolution {
+	lib, ok := r.matcher.FindLibrary(absolutePath)
+	if !ok {
+		return pathResolution{valid: false}
+	}
+	return pathResolution{
+		absolutePath: absolutePath,
+		libraryPath:  filepath.Clean(lib.Path),
+		libraryID:    lib.ID,
+		valid:        true,
+	}
+}
+
+// resolvePaths converts playlist file paths to library-qualified paths (format: "libraryID:relativePath").
+// For relative paths, it resolves them to absolute paths first, then determines which
+// library they belong to. This allows playlists to reference files across library boundaries.
+func (r *pathResolver) resolvePaths(ctx context.Context, folder *model.Folder, lines []string) ([]string, error) {
+	results := make([]string, 0, len(lines))
+	for idx, line := range lines {
+		resolution := r.resolvePath(line, folder)
+
+		if !resolution.valid {
+			log.Warn(ctx, "Path in playlist not found in any library", "path", line, "line", idx)
+			continue
+		}
+
+		qualifiedPath, err := resolution.ToQualifiedString()
+		if err != nil {
+			log.Debug(ctx, "Error getting library-qualified path", "path", line,
+				"libPath", resolution.libraryPath, "filePath", resolution.absolutePath, err)
+			continue
+		}
+
+		results = append(results, qualifiedPath)
+	}
+
+	return results, nil
+}
+
+// resolveImageURL resolves an #EXTALBUMARTURL value to a storable string.
+// HTTP(S) URLs are stored as-is (gated by EnableM3UExternalAlbumArt).
+// Local paths (file://, absolute, or relative) are resolved to an absolute path
+// and validated against known library boundaries via matcher.
+func resolveImageURL(value string, folder *model.Folder, matcher *model.LibraryMatcher, owner model.User) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+
+	// HTTP(S) URLs — store as-is, but only if external album art is enabled
+	if strings.HasPrefix(value, "http://") || strings.HasPrefix(value, "https://") {
+		if !conf.Server.EnableM3UExternalAlbumArt {
+			return ""
+		}
+		return value
+	}
+
+	// Resolve to local absolute path
+	localPath, ok := resolveLocalPath(value, folder)
+	if !ok || !model.IsImageFile(localPath) {
+		return ""
+	}
+
+	lib, ok := matcher.FindLibrary(localPath)
+	// A playlist without a folder (API upload, or CLI import from outside all libraries) may only use the owner's libraries.
+	if !ok || (folder == nil && !owner.HasLibraryAccess(lib.ID)) {
+		return ""
+	}
+	return localPath
+}
+
+// resolveLocalPath converts a file://, absolute, or relative path to a clean absolute path.
+// Returns ("", false) if the path cannot be resolved.
+func resolveLocalPath(value string, folder *model.Folder) (string, bool) {
+	if after, ok := strings.CutPrefix(value, "file://"); ok {
+		decoded, err := url.PathUnescape(after)
+		if err != nil {
+			return "", false
+		}
+		return filepath.Clean(decoded), true
+	}
+	if filepath.IsAbs(value) {
+		return filepath.Clean(value), true
+	}
+	if folder == nil {
+		return "", false
+	}
+	return filepath.Clean(filepath.Join(folder.AbsolutePath(), value)), true
+}

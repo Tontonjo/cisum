@@ -1,0 +1,67 @@
+package model
+
+import (
+	"cmp"
+	"context"
+	"strings"
+	"time"
+
+	"github.com/deluan/rest"
+	"github.com/navidrome/navidrome/utils/random"
+)
+
+type Share struct {
+	ID            string     `structs:"id" json:"id,omitempty"`
+	UserID        string     `structs:"user_id" json:"userId,omitempty"`
+	Username      string     `structs:"-" json:"username,omitempty"`
+	Description   string     `structs:"description" json:"description,omitempty"`
+	Downloadable  bool       `structs:"downloadable" json:"downloadable"`
+	ExpiresAt     *time.Time `structs:"expires_at" json:"expiresAt,omitempty"`
+	LastVisitedAt *time.Time `structs:"last_visited_at" json:"lastVisitedAt,omitempty"`
+	ResourceIDs   string     `structs:"resource_ids" json:"resourceIds,omitempty"`
+	ResourceType  string     `structs:"resource_type" json:"resourceType,omitempty"`
+	Contents      string     `structs:"contents" json:"contents,omitempty"`
+	Format        string     `structs:"format" json:"format,omitempty"`
+	MaxBitRate    int        `structs:"max_bit_rate" json:"maxBitRate,omitempty"`
+	VisitCount    int        `structs:"visit_count" json:"visitCount,omitempty"`
+	CreatedAt     time.Time  `structs:"created_at" json:"createdAt"`
+	UpdatedAt     time.Time  `structs:"updated_at" json:"updatedAt"`
+	Tracks        MediaFiles `structs:"-" json:"tracks,omitempty"`
+	Albums        Albums     `structs:"-" json:"albums,omitempty"`
+	URL           string     `structs:"-" json:"-"`
+	ImageURL      string     `structs:"-" json:"-"`
+}
+
+func (s Share) CoverArtID() ArtworkID {
+	ids := strings.SplitN(s.ResourceIDs, ",", 2)
+	switch s.ResourceType {
+	case "album":
+		return Album{ID: ids[0]}.CoverArtID()
+	case "playlist":
+		return Playlist{ID: ids[0]}.CoverArtID()
+	case "artist":
+		return Artist{ID: ids[0]}.CoverArtID()
+	}
+	// Tracks can be empty when they went missing or the owner lost access to their library.
+	if len(s.Tracks) == 0 {
+		return ArtworkID{}
+	}
+	rnd := random.Int64N(len(s.Tracks))
+	return s.Tracks[rnd].CoverArtID()
+}
+
+type Shares []Share
+
+// ToM3U8 exports the share to the Extended M3U8 format.
+func (s Share) ToM3U8() string {
+	return s.Tracks.ToM3U8(cmp.Or(s.Description, s.ID), false)
+}
+
+type ShareRepository interface {
+	rest.Repository[Share]
+	rest.Persistable[Share]
+	Exists(ctx context.Context, id string) (bool, error)
+	Get(ctx context.Context, id string) (*Share, error)
+	GetAll(ctx context.Context, options ...QueryOptions) (Shares, error)
+	CountAll(ctx context.Context, options ...QueryOptions) (int64, error)
+}

@@ -1,0 +1,36 @@
+# Cisum v0.10.2 - docker compose deployment
+# 1. Set the music path below (read-only is fine) and PUID/PGID (run "id" to see yours).
+# 2. docker compose up -d --build
+# 3. Open http://<server>:6874 and create the admin account.
+services:
+  cisum:
+    build: .
+    image: cisum:0.10.2
+    container_name: cisum
+    restart: unless-stopped
+    ports:
+      - "6874:6874"
+    environment:
+      # User and group Cisum runs as. They own ./data (fixed automatically) and must be able to read the music.
+      PUID: "1000"
+      PGID: "1000"
+      TZ: Europe/Zurich
+      CISUM_LOGLEVEL: info
+      CISUM_SCANNER_SCHEDULE: "@every 1h"
+      # Lyrics: local .lrc/.txt and embedded tags first, then LRCLIB online
+      CISUM_LYRICSPRIORITY: ".ttml,.yaml,.yml,.elrc,.lrc,.srt,.txt,embedded,lrclib"
+      CISUM_LRCLIB_ENABLED: "true"
+      CISUM_WAVEFORM_ENABLED: "true"
+      # Web radios: "Find stations" searches radio-browser.info (admins only)
+      CISUM_RADIOBROWSER_ENABLED: "true"
+      # Public share links (users also need the "Share publicly" right, set in Administration > Users)
+      CISUM_ENABLESHARING: "false"
+      # Automatic database backups in ./data/backup (manual backups: Administration > Maintenance)
+      # CISUM_BACKUP_SCHEDULE: "0 4 * * *"
+      # CISUM_BACKUP_COUNT: "7"
+      # Artist biographies: create a free key at https://www.last.fm/api/account/create
+      # CISUM_LASTFM_APIKEY: ""
+      # CISUM_LASTFM_SECRET: ""
+    volumes:
+      - ./data:/data
+      - /srv/music:/music:ro

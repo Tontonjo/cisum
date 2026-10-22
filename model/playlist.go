@@ -1,0 +1,262 @@
+package model
+
+import (
+	"context"
+	"iter"
+	"maps"
+	"os"
+	"path/filepath"
+	"slices"
+	"strconv"
+	"time"
+
+	"github.com/deluan/rest"
+	"github.com/navidrome/navidrome/conf"
+	"github.com/navidrome/navidrome/consts"
+	"github.com/navidrome/navidrome/log"
+	"github.com/navidrome/navidrome/model/criteria"
+)
+
+type Playlist struct {
+	Annotations `structs:"-"`
+	ItemImage   `structs:"-"`
+
+	ID               string         `structs:"id" json:"id"`
+	Name             string         `structs:"name" json:"name"`
+	Comment          string         `structs:"comment" json:"comment"`
+	Duration         float32        `structs:"duration" json:"duration"`
+	Size             int64          `structs:"size" json:"size"`
+	SongCount        int            `structs:"song_count" json:"songCount"`
+	OwnerName        string         `structs:"-" json:"ownerName"`
+	OwnerID          string         `structs:"owner_id" json:"ownerId"`
+	Public           bool           `structs:"public" json:"public"`
+	Tracks           PlaylistTracks `structs:"-" json:"tracks,omitempty"`
+	Path             string         `structs:"path" json:"path"`
+	Sync             bool           `structs:"sync" json:"sync"`
+	UploadedImage    string         `structs:"uploaded_image" json:"uploadedImage"`
+	ExternalImageURL string         `structs:"external_image_url" json:"externalImageUrl,omitempty"`
+	CreatedAt        time.Time      `structs:"created_at" json:"createdAt"`
+	UpdatedAt        time.Time      `structs:"updated_at" json:"updatedAt"`
+	ImportedHash     string         `structs:"imported_hash" json:"-"`
+
+	// SmartPlaylist attributes
+	Rules       *criteria.Criteria `structs:"rules" json:"rules"`
+	EvaluatedAt *time.Time         `structs:"evaluated_at" json:"evaluatedAt"`
+}
+
+func (pls Playlist) IsSmartPlaylist() bool {
+	return pls.Rules != nil && pls.Rules.Expression != nil
+}
+
+// TracksEditable reports whether the track list is user-owned rather than server-managed.
+func (pls Playlist) TracksEditable() bool {
+	return !pls.IsSmartPlaylist() && !pls.Sync
+}
+
+// RefreshDelay returns the playlist's own refresh window when set, falling
+// back to the global SmartPlaylistRefreshDelay.
+func (pls Playlist) RefreshDelay() time.Duration {
+	if pls.IsSmartPlaylist() && pls.Rules.RefreshDelay > 0 {
+		return pls.Rules.RefreshDelay
+	}
+	return conf.Server.SmartPlaylistRefreshDelay
+}
+
+func (pls Playlist) MediaFiles() MediaFiles {
+	if len(pls.Tracks) == 0 {
+		return nil
+	}
+	return pls.Tracks.MediaFiles()
+}
+
+func (pls *Playlist) refreshStats() {
+	pls.SongCount = len(pls.Tracks)
+	pls.Duration = 0
+	pls.Size = 0
+	for _, t := range pls.Tracks {
+		pls.Duration += t.MediaFile.Duration
+		pls.Size += t.MediaFile.Size
+	}
+}
+
+func (pls *Playlist) SetTracks(tracks PlaylistTracks) {
+	pls.Tracks = tracks
+	pls.refreshStats()
+}
+
+func (pls *Playlist) RemoveTracks(idxToRemove []int) {
+	var newTracks PlaylistTracks
+	for i, t := range pls.Tracks {
+		if slices.Contains(idxToRemove, i) {
+			continue
+		}
+		newTracks = append(newTracks, t)
+	}
+	pls.Tracks = newTracks
+	pls.refreshStats()
+}
+
+// ToM3U8 exports the playlist to the Extended M3U8 format
+func (pls *Playlist) ToM3U8() string {
+	return pls.MediaFiles().ToM3U8(pls.Name, true)
+}
+
+func (pls *Playlist) AddMediaFilesByID(mediaFileIds []string) {
+	pos := len(pls.Tracks)
+	for _, mfId := range mediaFileIds {
+		pos++
+		t := PlaylistTrack{
+			ID:          strconv.Itoa(pos),
+			MediaFileID: mfId,
+			MediaFile:   MediaFile{ID: mfId},
+			PlaylistID:  pls.ID,
+		}
+		pls.Tracks = append(pls.Tracks, t)
+	}
+	pls.refreshStats()
+}
+
+func (pls *Playlist) AddMediaFiles(mfs MediaFiles) {
+	pos := len(pls.Tracks)
+	for _, mf := range mfs {
+		pos++
+		t := PlaylistTrack{
+			ID:          strconv.Itoa(pos),
+			MediaFileID: mf.ID,
+			MediaFile:   mf,
+			PlaylistID:  pls.ID,
+		}
+		pls.Tracks = append(pls.Tracks, t)
+	}
+	pls.refreshStats()
+}
+
+func (pls Playlist) CoverArtID() ArtworkID {
+	return artworkIDFromPlaylist(pls)
+}
+
+// UploadedImagePath returns the absolute filesystem path for a manually uploaded
+// playlist cover image. Returns empty string if no image has been uploaded.
+// This does NOT cover sidecar images or external URLs — those are resolved
+// by the artwork reader's fallback chain.
+func (pls Playlist) UploadedImagePath() string {
+	return UploadedImagePath(consts.EntityPlaylist, pls.UploadedImage)
+}
+
+// NormalizedRules returns the rules with child playlist paths resolved to absolute, OS-native paths.
+func (pls Playlist) NormalizedRules() *criteria.Criteria {
+	if pls.Rules == nil || pls.Rules.Expression == nil {
+		return pls.Rules
+	}
+
+	rules := *pls.Rules
+	rules.Expression = normalizePlaylistPaths(pls.Rules.Expression, pls.Path)
+	return &rules
+}
+
+func normalizePlaylistPaths(inputRule criteria.Expression, referencingPlaylistPath string) criteria.Expression {
+	switch rule := inputRule.(type) {
+	case criteria.Any:
+		anyCriteria := make(criteria.Any, len(rule))
+		for i, rules := range rule {
+			anyCriteria[i] = normalizePlaylistPaths(rules, referencingPlaylistPath)
+		}
+		return anyCriteria
+	case criteria.All:
+		allCriteria := make(criteria.All, len(rule))
+		for i, rules := range rule {
+			allCriteria[i] = normalizePlaylistPaths(rules, referencingPlaylistPath)
+		}
+		return allCriteria
+	case criteria.InPlaylist:
+		return criteria.InPlaylist(normalizeChildPathRule(rule, referencingPlaylistPath))
+	case criteria.NotInPlaylist:
+		return criteria.NotInPlaylist(normalizeChildPathRule(rule, referencingPlaylistPath))
+	}
+
+	return inputRule
+}
+
+func normalizeChildPathRule(rule map[string]any, referencingPlaylistPath string) map[string]any {
+	path, ok := rule["path"].(string)
+	if !ok || path == "" {
+		return rule
+	}
+
+	// References use forward slashes to stay portable, while Playlist.Path is OS-native.
+	path = filepath.FromSlash(path)
+	switch {
+	case isAbsPlaylistRef(path):
+		path = filepath.Clean(path)
+	case referencingPlaylistPath != "":
+		path = filepath.Join(filepath.Dir(referencingPlaylistPath), path)
+	default:
+		log.Warn("Cannot resolve relative playlist reference: playlist has no file path", "reference", path)
+	}
+	normalized := maps.Clone(rule)
+	normalized["path"] = path
+	return normalized
+}
+
+// filepath.IsAbs rejects a bare leading separator on Windows, but that is how Unix spells absolute.
+func isAbsPlaylistRef(path string) bool {
+	return filepath.IsAbs(path) || os.IsPathSeparator(path[0])
+}
+
+type Playlists []Playlist
+
+type PlaylistCursor iter.Seq2[Playlist, error]
+
+type PlaylistRepository interface {
+	rest.Repository[Playlist]
+	rest.Persistable[Playlist]
+	AnnotatedRepository
+	CountAll(ctx context.Context, options ...QueryOptions) (int64, error)
+	Exists(ctx context.Context, id string) (bool, error)
+	Put(ctx context.Context, pls *Playlist, cols ...string) error
+	Get(ctx context.Context, id string) (*Playlist, error)
+	GetWithTracks(ctx context.Context, id string, refreshSmartPlaylist, includeMissing bool) (*Playlist, error)
+	GetAll(ctx context.Context, options ...QueryOptions) (Playlists, error)
+	GetCursor(ctx context.Context, options ...QueryOptions) (PlaylistCursor, error)
+	FindByPath(ctx context.Context, path string) (*Playlist, error)
+	Tracks(ctx context.Context, playlistId string, refreshSmartPlaylist bool) PlaylistTrackRepository
+	GetPlaylists(ctx context.Context, mediaFileId string) (Playlists, error)
+	// Cisum: evaluates smart playlist rules without saving (count, first song ids)
+	PreviewSmartPlaylist(ctx context.Context, rules criteria.Criteria, maxIDs int) (int64, []string, error)
+}
+
+type PlaylistTrack struct {
+	ID          string `json:"id"`
+	MediaFileID string `json:"mediaFileId"`
+	PlaylistID  string `json:"playlistId"`
+	MediaFile
+}
+
+type PlaylistTracks []PlaylistTrack
+
+func (plt PlaylistTracks) MediaFiles() MediaFiles {
+	mfs := make(MediaFiles, len(plt))
+	for i, t := range plt {
+		mfs[i] = t.MediaFile
+	}
+	return mfs
+}
+
+type PlaylistTrackCursor iter.Seq2[PlaylistTrack, error]
+
+type PlaylistTrackRepository interface {
+	rest.Repository[PlaylistTrack]
+	CountAll(ctx context.Context, options ...QueryOptions) (int64, error)
+	GetAll(ctx context.Context, options ...QueryOptions) (PlaylistTracks, error)
+	GetCursor(ctx context.Context, options ...QueryOptions) (PlaylistTrackCursor, error)
+	GetAlbumIDs(ctx context.Context, options ...QueryOptions) ([]string, error)
+	GetMediaFileIDs(ctx context.Context, options ...QueryOptions) ([]string, error)
+	Add(ctx context.Context, mediaFileIds []string) (int, error)
+	Insert(ctx context.Context, mediaFileIds []string, pos int) (int, error)
+	AddAlbums(ctx context.Context, albumIds []string) (int, error)
+	AddArtists(ctx context.Context, artistIds []string) (int, error)
+	AddDiscs(ctx context.Context, discs []DiscID) (int, error)
+	Delete(ctx context.Context, id ...string) error
+	DeleteAll(ctx context.Context) error
+	Reorder(ctx context.Context, pos int, newPos int) error
+}

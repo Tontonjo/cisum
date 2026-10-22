@@ -1,0 +1,11 @@
+# Cisum v0.10.2 - files not sent to the Docker build
+.git
+.DS_Store
+data
+music
+cache
+*.db
+*.db-*
+webui/node_modules
+webui/build
+!webui/build/.gitkeep
