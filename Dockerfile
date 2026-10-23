@@ -4,7 +4,7 @@
 # The upstream multi-platform Navidrome Dockerfile is kept as Dockerfile.navidrome.
 
 ########## Cisum web player (served at /web)
-FROM node:22-alpine AS webui
+FROM node:25-alpine AS webui
 WORKDIR /app
 COPY webui/package.json webui/package-lock.json ./
 RUN npm ci
