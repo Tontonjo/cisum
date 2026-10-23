@@ -1,16 +1,19 @@
 package public
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/navidrome/navidrome/core/auth"
 	streampkg "github.com/navidrome/navidrome/core/stream"
 	"github.com/navidrome/navidrome/log"
 	"github.com/navidrome/navidrome/model"
+	"github.com/navidrome/navidrome/model/request"
 	. "github.com/navidrome/navidrome/utils/gg"
 	"github.com/navidrome/navidrome/utils/req"
 )
@@ -26,7 +29,8 @@ func (pub *Router) handleStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	share, err := pub.ds.Share().Get(ctx, info.shareID)
+	// Do not re-evaluate a shared smart playlist for every audio request (Cisum 0.11.2)
+	share, err := pub.ds.Share().Get(request.WithNoSmartRefresh(ctx), info.shareID)
 	if err != nil {
 		checkShareError(ctx, w, err, info.shareID)
 		return
@@ -55,7 +59,10 @@ func (pub *Router) handleStream(w http.ResponseWriter, r *http.Request) {
 
 	// 404 rather than 403 so the response doesn't reveal whether the id exists.
 	// The track must belong to the share AND be within the owner's libraries.
-	if !shareContainsTrack(share, mf.ID) || !shareOwner.HasLibraryAccess(mf.LibraryID) {
+	// A smart playlist changes by itself (random order, play dates...): its signed link, minted when
+	// the share page listed the song, is proof enough (Cisum 0.11.2).
+	inShare := shareContainsTrack(share, mf.ID) || pub.isSmartPlaylistShare(ctx, share, shareOwner)
+	if !inShare || !shareOwner.HasLibraryAccess(mf.LibraryID) {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
@@ -94,6 +101,15 @@ type shareTrackInfo struct {
 	format  string
 	bitrate int
 	shareID string
+}
+
+// isSmartPlaylistShare reports whether the share points to a smart (rule based) playlist the owner can see.
+func (pub *Router) isSmartPlaylistShare(ctx context.Context, share *model.Share, owner *model.User) bool {
+	if share.ResourceType != "playlist" || share.ResourceIDs == "" {
+		return false
+	}
+	pls, err := pub.ds.Playlist().Get(request.WithUser(ctx, *owner), strings.Split(share.ResourceIDs, ",")[0])
+	return err == nil && pls.IsSmartPlaylist()
 }
 
 func shareContainsTrack(share *model.Share, mediaFileID string) bool {

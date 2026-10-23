@@ -108,7 +108,9 @@ func (r *shareRepository) loadMedia(ctx context.Context, share *model.Share) err
 		// Tracks returns nil when the playlist is no longer visible to the owner
 		// (e.g. it was made private after the share was created); leave the share
 		// with no tracks rather than exposing it.
-		trackRepo := plsRepo.Tracks(ownerCtx, ids[0], true)
+		// Shared streams skip the smart playlist refresh (Cisum 0.11.2): it rewrote the track list on every
+		// audio request, so a song shown on the page could vanish from the share before it was played.
+		trackRepo := plsRepo.Tracks(ownerCtx, ids[0], !request.NoSmartRefreshFrom(ctx))
 		if trackRepo == nil {
 			return nil
 		}

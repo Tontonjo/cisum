@@ -21,6 +21,8 @@ const (
 	InternalAuth     = contextKey("internalAuth") // Used for internal API calls, e.g., from the plugins
 	TokenEpochHolder = contextKey("tokenEpochHolder")
 	ServerAddress    = contextKey("serverAddress")
+	// Cisum 0.11.2: set by public share streams so loading the share does not re-evaluate a smart playlist
+	NoSmartRefresh = contextKey("noSmartRefresh")
 )
 
 var allKeys = []contextKey{
@@ -34,6 +36,17 @@ var allKeys = []contextKey{
 	ReverseProxyIp,
 	InternalAuth,
 	ServerAddress,
+}
+
+// WithNoSmartRefresh marks the context so share loading uses the stored smart playlist tracks (Cisum 0.11.2).
+func WithNoSmartRefresh(ctx context.Context) context.Context {
+	return context.WithValue(ctx, NoSmartRefresh, true)
+}
+
+// NoSmartRefreshFrom reports whether smart playlists must not be re-evaluated for this request.
+func NoSmartRefreshFrom(ctx context.Context) bool {
+	v, _ := ctx.Value(NoSmartRefresh).(bool)
+	return v
 }
 
 func WithUser(ctx context.Context, u model.User) context.Context {

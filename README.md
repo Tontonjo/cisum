@@ -8,7 +8,7 @@
 [![Ko-Fi](https://badgen.net/badge/Buy%20me%20a%20Coffee/Link?icon=buymeacoffee)](https://ko-fi.com/tontonjo)
 [![Infomaniak](https://badgen.net/badge/Infomaniak/Affiliated%20link?icon=K)](https://www.infomaniak.com/goto/fr/home?utm_term=6151f412daf35)
 
-Version: 0.11.1
+Version: 0.11.2
 
 ## Description
 Cisum is a self-hosted music server running in Docker, with a modern web player.  

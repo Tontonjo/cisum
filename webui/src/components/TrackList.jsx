@@ -1,4 +1,4 @@
-// Cisum web player v0.11.1 - Track list used by albums, playlists, songs, search and favorites.
+// Cisum web player v0.11.2 - Track list used by albums, playlists, songs, search and favorites.
 // Missing tracks (file not found on disk) stay visible but greyed out and cannot be played.
 import { useState, memo } from 'react'
 import { Box, Typography, IconButton, Menu, MenuItem, ListItemIcon, Tooltip, Divider, useTheme, useMediaQuery } from '@mui/material'
@@ -109,6 +109,8 @@ const Row = memo(function Row({ track, number, showCover, showAlbum, detail, isC
   const sort = useSortable({ id: track.rowKey, disabled: !sortable })
   const missing = track.missing
 
+  // Only the artist/album links open their page; the rest of the row (empty space included) plays the song
+  const stop = (ev) => ev.stopPropagation()
   const linkSx = { color: 'inherit', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }
   return (
     <Box
@@ -158,14 +160,14 @@ const Row = memo(function Row({ track, number, showCover, showAlbum, detail, isC
         <Typography variant="body1" noWrap sx={{ fontWeight: 550, color: isCurrent ? m3.primary : undefined, fontStyle: missing ? 'italic' : undefined }}>
           {track.title}
         </Typography>
-        <Typography variant="body2" noWrap color={isCurrent ? 'inherit' : 'text.secondary'} component="div" onClick={(e) => e.stopPropagation()}>
+        <Typography variant="body2" noWrap color={isCurrent ? 'inherit' : 'text.secondary'} component="div">
           {missing && 'Missing file. '}
-          {track.artistId ? <Box component={Link} to={`/artists/${track.artistId}`} {...intentProps('artist', { id: track.artistId, name: track.artist })} sx={linkSx}>{track.artist}</Box> : track.artist}
+          {track.artistId ? <Box component={Link} to={`/artists/${track.artistId}`} {...intentProps('artist', { id: track.artistId, name: track.artist })} onClick={stop} sx={linkSx}>{track.artist}</Box> : track.artist}
         </Typography>
       </Box>
       {showAlbum && wide && (
-        <Typography variant="body2" noWrap color="text.secondary" onClick={(e) => e.stopPropagation()} sx={{ opacity: missing ? 0.45 : 1 }}>
-          {track.albumId ? <Box component={Link} to={`/albums/${track.albumId}`} {...intentProps('album', albumPreview(track))} sx={linkSx}>{track.album}</Box> : track.album}
+        <Typography variant="body2" noWrap color="text.secondary" sx={{ opacity: missing ? 0.45 : 1 }}>
+          {track.albumId ? <Box component={Link} to={`/albums/${track.albumId}`} {...intentProps('album', albumPreview(track))} onClick={stop} sx={linkSx}>{track.album}</Box> : track.album}
         </Typography>
       )}
       {detail && (

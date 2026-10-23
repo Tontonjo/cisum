@@ -1,4 +1,4 @@
-// Cisum web player v0.7.0 - Playback engine and play queue.
+// Cisum web player v0.11.2 - Playback engine and play queue.
 // A single <audio> element drives playback. Web radios are queue entries with isRadio: they play
 // through the server relay (direct URL as fallback), are never scrobbled and show the live title. Queue state lives in `usePlayer`; the fast-changing
 // position lives in `useProgress` so only progress widgets re-render 4 times per second.
@@ -216,12 +216,18 @@ export const usePlayer = create((set, get) => ({
 let scrobbled = false
 let reportedNowPlaying = false
 let radioDirect = false // the relay failed for this station: the direct URL is being tried
+// A failed song stream is retried before showing an error (server busy transcoding answers 429, Retry-After 5 s)
+const STREAM_RETRY_DELAYS = [1500, 5000] // ms
+let streamRetries = 0
+let retryTimer = null
 
 function loadCurrent(autoplay, startAt = 0) {
   const track = usePlayer.getState().current()
   scrobbled = false
   reportedNowPlaying = false
   radioDirect = false
+  streamRetries = 0
+  clearTimeout(retryTimer)
   if (!track) {
     audio.pause()
     audio.removeAttribute('src')
@@ -252,6 +258,7 @@ audio.addEventListener('pause', () => usePlayer.setState({ playing: false }))
 audio.addEventListener('waiting', () => useProgress.setState({ buffering: true }))
 audio.addEventListener('playing', () => {
   useProgress.setState({ buffering: false })
+  streamRetries = 0
   const track = usePlayer.getState().current()
   if (track && !track.isRadio && !reportedNowPlaying) {
     reportedNowPlaying = true
@@ -272,6 +279,19 @@ audio.addEventListener('error', () => {
     audio.play().catch(() => usePlayer.setState({ playing: false }))
     return
   }
+  if (track && !track.isRadio && streamRetries < STREAM_RETRY_DELAYS.length) {
+    const qkey = track.qkey
+    const position = audio.currentTime || 0
+    useProgress.setState({ buffering: true })
+    retryTimer = setTimeout(() => {
+      if (usePlayer.getState().current()?.qkey !== qkey) return // another song was chosen meanwhile
+      audio.src = streamUrl(track.id)
+      audio.currentTime = position
+      audio.play().catch(() => {})
+    }, STREAM_RETRY_DELAYS[streamRetries++])
+    return
+  }
+  useProgress.setState({ buffering: false })
   const error = track?.isRadio ? `${track.title} cannot be played right now` : 'This track could not be played'
   usePlayer.setState({ playing: false, error })
   useUi.getState().notify(error)
