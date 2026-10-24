@@ -1,21 +1,11 @@
+# Cisum v0.10.2 - files not sent to the Docker build
+.git
 .DS_Store
-ui/node_modules
-ui/build
-!ui/build/.gitkeep
-Dockerfile.navidrome
-docker-compose*.yml
 data
-*.db
-testDB
-navidrome
-navidrome.toml
-tmp
-!tmp/taglib
-dist
-binaries
-cache
 music
-music.old
+cache
+*.db
+*.db-*
 webui/node_modules
 webui/build
 !webui/build/.gitkeep

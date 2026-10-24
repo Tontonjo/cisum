@@ -1,7 +1,6 @@
 # Cisum v0.11.2 - Docker image (single platform, built on the target machine).
 # Build:  docker compose build      (or: docker build -t cisum .)
 # Works with the legacy builder and with BuildKit (no BuildKit-only options).
-# The upstream multi-platform Navidrome Dockerfile is kept as Dockerfile.navidrome.
 
 ########## Cisum web player (served at /web)
 FROM node:22-alpine AS webui
