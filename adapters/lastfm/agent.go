@@ -147,7 +147,44 @@ func (l *lastfmAgent) GetAlbumImages(ctx context.Context, name, artist, mbid str
 	return images, nil
 }
 
+// artistName returns the Last.fm name to query for a local artist: the one an admin chose (Cisum),
+// else name. A pin saying the artist is not on Last.fm answers ErrNotFound without any request.
+func (l *lastfmAgent) artistName(ctx context.Context, id, name string) (string, error) {
+	pin, ok := agents.GetArtistPin(ctx, l.ds, id, lastFMAgentName)
+	switch {
+	case !ok:
+		return name, nil
+	case pin.None:
+		return "", agents.ErrNotFound
+	case pin.Name != "":
+		return pin.Name, nil
+	}
+	return name, nil
+}
+
+// SearchArtistCandidates lists the Last.fm artists matching name, for manual matching (Cisum).
+func (l *lastfmAgent) SearchArtistCandidates(ctx context.Context, name string, limit int) ([]agents.ArtistCandidate, error) {
+	found, err := l.client.artistSearch(ctx, name, limit)
+	if err != nil {
+		log.Error(ctx, "Error calling LastFM/artist.search", "artist", name, err)
+		return nil, err
+	}
+	res := make([]agents.ArtistCandidate, 0, len(found))
+	for _, a := range found {
+		listeners, _ := strconv.Atoi(a.Listeners)
+		res = append(res, agents.ArtistCandidate{Name: a.Name, MBID: a.MBID, URL: a.URL, Fans: listeners})
+	}
+	return res, nil
+}
+
 func (l *lastfmAgent) GetArtistMBID(ctx context.Context, id string, name string) (string, error) {
+	if pin, ok := agents.GetArtistPin(ctx, l.ds, id, lastFMAgentName); ok && !pin.None && pin.MBID != "" {
+		return pin.MBID, nil
+	}
+	name, err := l.artistName(ctx, id, name)
+	if err != nil {
+		return "", err
+	}
 	a, err := l.callArtistGetInfo(ctx, name, l.languages[0])
 	if err != nil {
 		return "", err
@@ -159,6 +196,10 @@ func (l *lastfmAgent) GetArtistMBID(ctx context.Context, id string, name string)
 }
 
 func (l *lastfmAgent) GetArtistURL(ctx context.Context, id, name, mbid string) (string, error) {
+	name, err := l.artistName(ctx, id, name)
+	if err != nil {
+		return "", err
+	}
 	a, err := l.callArtistGetInfo(ctx, name, l.languages[0])
 	if err != nil {
 		return "", err
@@ -170,6 +211,10 @@ func (l *lastfmAgent) GetArtistURL(ctx context.Context, id, name, mbid string) (
 }
 
 func (l *lastfmAgent) GetArtistBiography(ctx context.Context, id, name, mbid string) (string, error) {
+	name, err := l.artistName(ctx, id, name)
+	if err != nil {
+		return "", err
+	}
 	for _, lang := range l.languages {
 		a, err := l.callArtistGetInfo(ctx, name, lang)
 		if err != nil {
@@ -184,6 +229,10 @@ func (l *lastfmAgent) GetArtistBiography(ctx context.Context, id, name, mbid str
 }
 
 func (l *lastfmAgent) GetSimilarArtists(ctx context.Context, id, name, mbid string, limit int) ([]agents.Artist, error) {
+	name, err := l.artistName(ctx, id, name)
+	if err != nil {
+		return nil, err
+	}
 	resp, err := l.callArtistGetSimilar(ctx, name, limit)
 	if err != nil {
 		return nil, err
@@ -202,6 +251,10 @@ func (l *lastfmAgent) GetSimilarArtists(ctx context.Context, id, name, mbid stri
 }
 
 func (l *lastfmAgent) GetArtistTopSongs(ctx context.Context, id, artistName, mbid string, count int) ([]agents.Song, error) {
+	artistName, err := l.artistName(ctx, id, artistName)
+	if err != nil {
+		return nil, err
+	}
 	resp, err := l.callArtistGetTopTracks(ctx, artistName, count)
 	if err != nil {
 		return nil, err
@@ -247,7 +300,11 @@ var (
 	errNoArtistPage = errors.New("no artist image in Last.fm page")
 )
 
-func (l *lastfmAgent) GetArtistImages(ctx context.Context, _, name, mbid string) ([]agents.ExternalImage, error) {
+func (l *lastfmAgent) GetArtistImages(ctx context.Context, id, name, mbid string) ([]agents.ExternalImage, error) {
+	name, err := l.artistName(ctx, id, name)
+	if err != nil {
+		return nil, err
+	}
 	log.Debug(ctx, "Getting artist images from Last.fm", "name", name)
 	a, err := l.callArtistGetInfo(ctx, name, l.languages[0])
 	if err != nil {

@@ -1,4 +1,4 @@
-// Cisum web player v0.11.3 - Administration API (admin only on the server side).
+// Cisum web player v0.11.4 - Administration API (admin only on the server side).
 import { nativeApi, subsonic } from './client'
 
 export const getStatus = async () => (await nativeApi('/cisum/admin/status')).data
@@ -8,6 +8,14 @@ export const runMaintenance = async (action) =>
   (await nativeApi(`/cisum/admin/maintenance/${action}`, { method: 'POST' })).data
 
 export const getMaintenanceStatus = async () => (await nativeApi('/cisum/admin/maintenance')).data
+
+/** Artist matching: candidates of every enabled service (Deezer, Last.fm) for a search, and the saved choice. */
+export const getArtistMatch = async (id, q) =>
+  (await nativeApi(`/cisum/admin/artists/${id}/match`, { query: { q } })).data
+
+/** Saves the artist matching: pins = { deezer: { id, name } | { none: true }, lastfm: ... }, missing = automatic. */
+export const setArtistMatch = async (id, pins) =>
+  (await nativeApi(`/cisum/admin/artists/${id}/match`, { method: 'PUT', body: { pins } })).data
 
 /** Sets the resized images cache size in MB (0 = unlimited). Returns the new imageCache status. */
 export const setImageCacheSize = async (mb) =>

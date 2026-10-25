@@ -12,6 +12,21 @@ type Response struct {
 	Session        Session        `json:"session"`
 	NowPlaying     NowPlaying     `json:"nowplaying"`
 	Scrobbles      Scrobbles      `json:"scrobbles"`
+	Results        SearchResults  `json:"results"` // Cisum: artist.search
+}
+
+// SearchResults is the artist.search answer (Cisum: manual artist matching).
+type SearchResults struct {
+	ArtistMatches struct {
+		Artist []SearchArtist `json:"artist"`
+	} `json:"artistmatches"`
+}
+
+type SearchArtist struct {
+	Name      string `json:"name"`
+	MBID      string `json:"mbid"`
+	URL       string `json:"url"`
+	Listeners string `json:"listeners"`
 }
 
 type Album struct {

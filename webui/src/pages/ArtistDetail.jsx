@@ -1,8 +1,10 @@
-// Cisum web player v0.11.1 - Artist page: picture, biography, top songs and albums.
+// Cisum web player v0.11.4 - Artist page: picture, biography, top songs and albums.
+// Admins can choose the right Deezer / Last.fm artist when a namesake was picked (ArtistMatchDialog).
 // The header is drawn at once from the link's preview (api/preload.js) while the albums load.
 import { useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { Box, Typography, Button } from '@mui/material'
+import { Box, Typography, Button, IconButton, Tooltip } from '@mui/material'
+import ManageSearchRounded from '@mui/icons-material/ManageSearchRounded'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { getArtistInfo, getTopSongs, ARTIST_ALBUM_SORTS, sortDetail } from '../api/library'
 import { queryClient } from '../api/queryClient'
@@ -14,6 +16,8 @@ import { plural } from '../utils/format'
 import DetailHeader from '../components/DetailHeader'
 import TrackList from '../components/TrackList'
 import StarButton from '../components/StarButton'
+import ArtistMatchDialog from '../components/ArtistMatchDialog'
+import { useMe } from '../store/me'
 import { AlbumCard, CardGrid, ArtistCard, Shelf } from '../components/Cards'
 import { CardGridSkeleton, DetailHeaderSkeleton } from '../components/Skeletons'
 
@@ -27,6 +31,8 @@ export default function ArtistDetail() {
   const { id } = useParams()
   const playTracks = usePlayer((s) => s.playTracks)
   const [bioOpen, setBioOpen] = useState(false)
+  const [matchOpen, setMatchOpen] = useState(false)
+  const isAdmin = useMe((s) => s.isAdmin)
   const qc = useQueryClient()
   const { data: artist } = useQuery(artistQuery(id))
   const preview = getPreview('artist', id)
@@ -60,7 +66,16 @@ export default function ArtistDetail() {
         meta={albumCount != null ? plural(albumCount, 'album') : '\u00a0'}
         onPlay={() => play(false)}
         onShuffle={() => play(true)}
-        actions={'starred' in shown && <StarButton item={shown} />}
+        actions={
+          <>
+            {'starred' in shown && <StarButton item={shown} />}
+            {isAdmin && (
+              <Tooltip title="Wrong picture or biography? Choose the right artist">
+                <IconButton onClick={() => setMatchOpen(true)} aria-label="Choose the right artist"><ManageSearchRounded /></IconButton>
+              </Tooltip>
+            )}
+          </>
+        }
       >
         {bio && (
           <Box sx={{ mt: 1.5, maxWidth: '72ch' }}>
@@ -90,6 +105,8 @@ export default function ArtistDetail() {
       ) : (
         <CardGridSkeleton count={albumCount} />
       )}
+
+      {isAdmin && <ArtistMatchDialog artist={{ id, name: shown.name }} open={matchOpen} onClose={() => setMatchOpen(false)} />}
 
       {!!info?.similar?.length && (
         <Box sx={{ mt: 6 }}>

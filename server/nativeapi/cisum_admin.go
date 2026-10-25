@@ -1,4 +1,5 @@
-// Cisum v0.11.3 - Administration API: server status, maintenance, image cache size, user rights and import.
+// Cisum v0.11.4 - Administration API: server status, maintenance, image cache size, user rights, import
+// and artist matching (cisum_artist_match.go).
 // All /cisum/admin routes are mounted behind adminOnlyMiddleware (see native_api.go).
 package nativeapi
 
@@ -62,6 +63,8 @@ func (api *Router) addCisumAdminRoutes(r chi.Router) {
 		r.Post("/maintenance/{action}", api.adminMaintenance)
 		r.Get("/maintenance", api.maintenanceStatus)
 		r.Put("/image-cache", api.setImageCacheSize)
+		r.Get("/artists/{id}/match", api.getArtistMatch)
+		r.Put("/artists/{id}/match", api.setArtistMatch)
 		r.Get("/users/{id}/permissions", api.getUserPermissions)
 		r.Put("/users/{id}/permissions", api.setUserPermissions)
 		r.Post("/import/test", api.importTest)

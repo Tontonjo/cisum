@@ -112,6 +112,22 @@ func parseBodyError(data []byte) error {
 	}
 }
 
+// getArtist loads one artist by its Deezer id (Cisum: artist chosen by an admin).
+func (c *client) getArtist(ctx context.Context, artistID int) (*Artist, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("%s/artist/%d", apiBaseURL, artistID), nil)
+	if err != nil {
+		return nil, err
+	}
+	var artist Artist
+	if err := c.makeRequest(req, &artist); err != nil {
+		return nil, err
+	}
+	if artist.ID == 0 {
+		return nil, agents.ErrNotFound
+	}
+	return &artist, nil
+}
+
 func (c *client) getRelatedArtists(ctx context.Context, artistID int) ([]Artist, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("%s/artist/%d/related", apiBaseURL, artistID), nil)
 	if err != nil {

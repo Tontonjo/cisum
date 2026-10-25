@@ -81,6 +81,19 @@ func (c *client) artistGetInfo(ctx context.Context, name string, lang string) (*
 	return &response.Artist, nil
 }
 
+// artistSearch lists the Last.fm artists matching name (Cisum: manual artist matching).
+func (c *client) artistSearch(ctx context.Context, name string, limit int) ([]SearchArtist, error) {
+	params := url.Values{}
+	params.Add("method", "artist.search")
+	params.Add("artist", escapePlus(name))
+	params.Add("limit", strconv.Itoa(limit))
+	response, err := c.makeRequest(ctx, http.MethodGet, params, false)
+	if err != nil {
+		return nil, err
+	}
+	return response.Results.ArtistMatches.Artist, nil
+}
+
 func (c *client) artistGetSimilar(ctx context.Context, name string, limit int) (*SimilarArtists, error) {
 	params := url.Values{}
 	params.Add("method", "artist.getSimilar")

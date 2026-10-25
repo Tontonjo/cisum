@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/navidrome/navidrome/conf"
@@ -46,8 +47,8 @@ func (s *deezerAgent) AgentName() string {
 	return deezerAgentName
 }
 
-func (s *deezerAgent) GetArtistImages(ctx context.Context, _, name, _ string) ([]agents.ExternalImage, error) {
-	artist, err := s.searchArtist(ctx, name)
+func (s *deezerAgent) GetArtistImages(ctx context.Context, id, name, _ string) ([]agents.ExternalImage, error) {
+	artist, err := s.findArtist(ctx, id, name)
 	if err != nil {
 		if errors.Is(err, agents.ErrNotFound) {
 			log.Warn(ctx, "Artist not found in deezer", "artist", name)
@@ -87,6 +88,40 @@ const deezerEmptyPicturePath = "/images/artist//"
 
 func isPlaceholderPicture(url string) bool {
 	return strings.Contains(url, deezerEmptyPicturePath)
+}
+
+// findArtist returns the Deezer artist of a local artist: the one an admin chose (Cisum), else the best
+// match by name. A pin saying the artist is not on Deezer answers ErrNotFound without any request.
+func (s *deezerAgent) findArtist(ctx context.Context, id, name string) (*Artist, error) {
+	if pin, ok := agents.GetArtistPin(ctx, s.dataStore, id, deezerAgentName); ok {
+		if pin.None {
+			return nil, agents.ErrNotFound
+		}
+		if deezerID, err := strconv.Atoi(pin.ID); err == nil && deezerID > 0 {
+			return s.client.getArtist(ctx, deezerID)
+		}
+	}
+	return s.searchArtist(ctx, name)
+}
+
+// SearchArtistCandidates lists the Deezer artists matching name, for manual matching (Cisum).
+func (s *deezerAgent) SearchArtistCandidates(ctx context.Context, name string, limit int) ([]agents.ArtistCandidate, error) {
+	artists, err := s.client.searchArtists(ctx, name, limit)
+	if errors.Is(err, agents.ErrNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	res := make([]agents.ArtistCandidate, 0, len(artists))
+	for _, a := range artists {
+		c := agents.ArtistCandidate{ID: strconv.Itoa(a.ID), Name: a.Name, URL: a.Link, Albums: a.NbAlbum, Fans: a.NbFan}
+		if !isPlaceholderPicture(a.PictureMedium) {
+			c.ImageURL = a.PictureMedium
+		}
+		res = append(res, c)
+	}
+	return res, nil
 }
 
 func (s *deezerAgent) searchArtist(ctx context.Context, name string) (*Artist, error) {
@@ -131,8 +166,8 @@ func (s *deezerAgent) searchArtist(ctx context.Context, name string) (*Artist, e
 	return new(best), nil
 }
 
-func (s *deezerAgent) GetSimilarArtists(ctx context.Context, _, name, _ string, limit int) ([]agents.Artist, error) {
-	artist, err := s.searchArtist(ctx, name)
+func (s *deezerAgent) GetSimilarArtists(ctx context.Context, id, name, _ string, limit int) ([]agents.Artist, error) {
+	artist, err := s.findArtist(ctx, id, name)
 	if err != nil {
 		return nil, err
 	}
@@ -153,8 +188,8 @@ func (s *deezerAgent) GetSimilarArtists(ctx context.Context, _, name, _ string, 
 	return res, nil
 }
 
-func (s *deezerAgent) GetArtistTopSongs(ctx context.Context, _, artistName, _ string, count int) ([]agents.Song, error) {
-	artist, err := s.searchArtist(ctx, artistName)
+func (s *deezerAgent) GetArtistTopSongs(ctx context.Context, id, artistName, _ string, count int) ([]agents.Song, error) {
+	artist, err := s.findArtist(ctx, id, artistName)
 	if err != nil {
 		return nil, err
 	}
@@ -174,8 +209,8 @@ func (s *deezerAgent) GetArtistTopSongs(ctx context.Context, _, artistName, _ st
 	return res, nil
 }
 
-func (s *deezerAgent) GetArtistBiography(ctx context.Context, _, name, _ string) (string, error) {
-	artist, err := s.searchArtist(ctx, name)
+func (s *deezerAgent) GetArtistBiography(ctx context.Context, id, name, _ string) (string, error) {
+	artist, err := s.findArtist(ctx, id, name)
 	if err != nil {
 		return "", err
 	}
