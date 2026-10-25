@@ -1,4 +1,5 @@
-// Cisum web player v0.7.0 - All albums, sorted by the server (remembered per user), loaded page by page.
+// Cisum web player v0.11.3 - All albums, sorted by the server (remembered per user), loaded page by page.
+// The next page is requested 3 screens ahead (in the app scroll container) and its covers are preloaded.
 // A ?sort= link (Home "Show all") selects that sort once.
 import { useCallback, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
@@ -8,8 +9,15 @@ import { useSort } from '../store/preferences'
 import { AlbumCard, CardGrid, PageTitle } from '../components/Cards'
 import SortChips from '../components/SortChips'
 import InfiniteSentinel from '../components/InfiniteSentinel'
+import { coverRequestPx } from '../components/Cover'
+import { usePageCoverPreload } from '../api/coverPreload'
 
-const PAGE = 60
+// First page small (fast first display), next ones larger so fast scrolling does not catch up with loading
+const FIRST_PAGE = 60
+const PAGE = 120
+// Screen heights before the end of the list at which the next page is requested
+const AHEAD_SCREENS = 3
+const albumCover = (a) => a.coverArt
 
 export default function Albums() {
   const [sort, setSort, loaded] = useSort('albums', ALBUM_SORTS, 'recently_added')
@@ -24,15 +32,17 @@ export default function Albums() {
   }, [loaded, linked])
   const q = useInfiniteQuery({
     queryKey: ['albums', sort.key, sort.dir],
-    queryFn: ({ pageParam }) => getAlbumsPage({ sort: sort.key, dir: sort.dir, start: pageParam, count: PAGE }),
+    queryFn: ({ pageParam }) => getAlbumsPage({ sort: sort.key, dir: sort.dir, start: pageParam, count: pageParam ? PAGE : FIRST_PAGE }),
     enabled: loaded && !linked, // wait for the remembered (or linked) sort to avoid loading another one first
     initialPageParam: 0,
     getNextPageParam: (last, pages) => {
-      const loadedCount = pages.length * PAGE
-      return loadedCount < last.total ? loadedCount : undefined
+      const loadedCount = pages.reduce((n, p) => n + p.items.length, 0)
+      return last.items.length && loadedCount < last.total ? loadedCount : undefined
     },
   })
   const albums = q.data?.pages.flatMap((p) => p.items) || []
+  // Covers of each page received are preloaded at the size the cards request
+  usePageCoverPreload(q.data?.pages, albumCover, coverRequestPx())
   const loadMore = useCallback(() => {
     if (q.hasNextPage && !q.isFetchingNextPage) q.fetchNextPage()
   }, [q])
@@ -49,7 +59,7 @@ export default function Albums() {
           return <AlbumCard key={a.id} album={a} subtitle={detail && [a.artist, detail].filter(Boolean).join(', ')} />
         })}
       </CardGrid>
-      <InfiniteSentinel onVisible={loadMore} loading={q.isFetching} done={!q.hasNextPage} />
+      <InfiniteSentinel onVisible={loadMore} loading={q.isFetching} done={!q.hasNextPage} ahead={AHEAD_SCREENS} />
     </>
   )
 }
