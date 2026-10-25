@@ -1,4 +1,4 @@
-// Cisum web player v0.11.1 - Album and artist cards, grids and horizontal shelves.
+// Cisum web player v0.11.3 - Album and artist cards, grids and horizontal shelves.
 // Cards start loading their detail page when pressed or focused (api/preload.js).
 import { Box, Typography, IconButton, useTheme } from '@mui/material'
 import { Link } from 'react-router-dom'
@@ -6,7 +6,7 @@ import PlayArrowRounded from '@mui/icons-material/PlayArrowRounded'
 import { queryClient } from '../api/queryClient'
 import { albumQuery, intentProps } from '../api/preload'
 import { usePlayer } from '../store/player'
-import Cover from './Cover'
+import Cover, { coverRequestPx } from './Cover'
 
 export async function playAlbum(id, shuffle = false) {
   // Same cache as the album page: no second request when the album was already loaded
@@ -15,7 +15,7 @@ export async function playAlbum(id, shuffle = false) {
 }
 
 // Size requested by a card cover (Cover default when it fills its parent)
-const CARD_COVER_PX = 400
+const CARD_COVER_PX = coverRequestPx()
 
 export function AlbumCard({ album, subtitle }) {
   const { m3 } = useTheme()

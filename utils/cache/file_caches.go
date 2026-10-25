@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/fs"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -18,6 +19,26 @@ import (
 	"github.com/navidrome/navidrome/consts"
 	"github.com/navidrome/navidrome/log"
 )
+
+// UnlimitedCacheSize is the cache size value that keeps the cache enabled without a size limit
+// (Cisum). A size of "0" still disables the cache, as in Navidrome.
+const UnlimitedCacheSize = "unlimited"
+
+// ParseCacheSize parses a cache size such as "500MB". UnlimitedCacheSize returns 0 and unlimited=true.
+func ParseCacheSize(cacheSize string) (size uint64, unlimited bool, err error) {
+	if strings.EqualFold(strings.TrimSpace(cacheSize), UnlimitedCacheSize) {
+		return 0, true, nil
+	}
+	size, err = humanize.ParseBytes(cacheSize)
+	return size, false, err
+}
+
+// SizeAdjustable is implemented by file caches whose size limit can change while running (Cisum).
+type SizeAdjustable interface {
+	// SetMaxSize applies a new size (same format as NewFileCache, UnlimitedCacheSize accepted).
+	// applied is false when the cache is disabled or not initialized yet: the value then needs a restart.
+	SetMaxSize(cacheSize string) (applied bool, err error)
+}
 
 // Item represents an item that can be cached. It must implement the Key method that returns a unique key for a
 // given item.
@@ -87,11 +108,12 @@ func NewFileCache(name, cacheSize, cacheFolder string, maxItems int, getReader R
 
 	go func() {
 		start := time.Now()
-		cache, sfs, err := newFSCache(fc.name, fc.cacheSize, fc.cacheFolder, fc.maxItems)
+		cache, sfs, haunter, err := newFSCache(fc.name, fc.cacheSize, fc.cacheFolder, fc.maxItems)
 		fc.mutex.Lock()
 		defer fc.mutex.Unlock()
 		fc.cache = cache
 		fc.fs = sfs
+		fc.haunter = haunter
 		fc.disabled = cache == nil || err != nil
 		log.Info("Finished initializing cache", "cache", fc.name, "maxSize", fc.cacheSize, "elapsedTime", time.Since(start))
 		fc.ready.Store(true)
@@ -113,6 +135,7 @@ type fileCache struct {
 	maxItems    int
 	cache       fscache.Cache
 	fs          *spreadFS
+	haunter     *fileHaunter
 	getReader   ReadFunc
 	disabled    bool
 	ready       atomic.Bool
@@ -131,6 +154,27 @@ func (fc *fileCache) Disabled(_ context.Context) bool {
 	defer fc.mutex.RUnlock()
 
 	return fc.disabled
+}
+
+// SetMaxSize implements SizeAdjustable. Reducing the size frees space at the next cleanup
+// (every DefaultCacheCleanUpInterval). A size of 0 is refused: disabling needs a restart.
+func (fc *fileCache) SetMaxSize(cacheSize string) (bool, error) {
+	size, unlimited, err := ParseCacheSize(cacheSize)
+	if err != nil {
+		return false, err
+	}
+	if size == 0 && !unlimited {
+		return false, errors.New("a cache size of 0 disables the cache, use \"" + UnlimitedCacheSize + "\" for no limit")
+	}
+	fc.mutex.Lock()
+	defer fc.mutex.Unlock()
+	if fc.haunter == nil {
+		return false, nil
+	}
+	fc.haunter.SetMaxSize(size)
+	fc.cacheSize = cacheSize
+	log.Info("Cache size changed", "cache", fc.name, "maxSize", cacheSize)
+	return true, nil
 }
 
 func (fc *fileCache) invalidate(ctx context.Context, key string) error {
@@ -284,36 +328,41 @@ func (fc *fileCache) markComplete(ctx context.Context, key string) {
 	}
 }
 
-func newFSCache(name, cacheSize, cacheFolder string, maxItems int) (fscache.Cache, *spreadFS, error) {
-	size, err := humanize.ParseBytes(cacheSize)
+func newFSCache(name, cacheSize, cacheFolder string, maxItems int) (fscache.Cache, *spreadFS, *fileHaunter, error) {
+	size, unlimited, err := ParseCacheSize(cacheSize)
 	if err != nil {
 		log.Error("Invalid cache size. Using default size", "cache", name, "size", cacheSize,
 			"defaultSize", humanize.Bytes(consts.DefaultCacheSize))
 		size = consts.DefaultCacheSize
 	}
-	if size == 0 {
+	if size == 0 && !unlimited {
 		log.Warn(fmt.Sprintf("%s cache disabled", name))
-		return nil, nil, nil
+		return nil, nil, nil, nil
 	}
 
-	lru := NewFileHaunter(name, maxItems, size, consts.DefaultCacheCleanUpInterval)
+	// Cisum: an unlimited cache keeps size 0 in the haunter, which then only checks maxItems.
+	lru := newFileHaunter(name, maxItems, size, consts.DefaultCacheCleanUpInterval)
 	h := fscache.NewLRUHaunterStrategy(lru)
 	cacheFolder = filepath.Join(conf.Server.CacheFolder.MustPath(), cacheFolder)
 
+	maxSizeLog := humanize.Bytes(size)
+	if unlimited {
+		maxSizeLog = UnlimitedCacheSize
+	}
 	var fs *spreadFS
-	log.Info(fmt.Sprintf("Creating %s cache", name), "path", cacheFolder, "maxSize", humanize.Bytes(size))
+	log.Info(fmt.Sprintf("Creating %s cache", name), "path", cacheFolder, "maxSize", maxSizeLog)
 	fs, err = NewSpreadFS(cacheFolder, 0755)
 	if err != nil {
 		log.Error(fmt.Sprintf("Error initializing %s cache FS", name), err)
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	ck, err := fscache.NewCacheWithHaunter(fs, h)
 	if err != nil {
 		log.Error(fmt.Sprintf("Error initializing %s cache", name), err)
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	ck.SetKeyMapper(fs.KeyMapper)
 
-	return ck, fs, nil
+	return ck, fs, lru, nil
 }

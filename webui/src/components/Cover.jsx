@@ -1,8 +1,20 @@
-// Cisum web player v0.11.0 - Cover art image with a neutral placeholder.
+// Cisum web player v0.11.3 - Cover art image with a neutral placeholder.
 import { useEffect, useState } from 'react'
 import { Box, useTheme } from '@mui/material'
 import MusicNoteRounded from '@mui/icons-material/MusicNoteRounded'
 import { coverUrl } from '../api/client'
+import { COVER_PX } from '../config'
+
+/**
+ * Size (px) to request for a cover displayed at size (CSS px, undefined = fills its parent).
+ * Anything up to the server prepared size uses that size: it is already resized and cached on the
+ * server, and the browser downscales it for free. Larger displays ask for 2x, rounded, max 600.
+ */
+export function coverRequestPx(size) {
+  if (typeof size !== 'number') return COVER_PX
+  const needed = Math.min(Math.ceil(size * 2 / 100) * 100, 600)
+  return needed <= COVER_PX ? COVER_PX : needed
+}
 
 /**
  * size: number (px) for fixed covers, or undefined to fill the parent width (square).
@@ -14,7 +26,7 @@ export default function Cover({ id, size, radius = 3, request, alt = '', sx, rou
   const { m3 } = useTheme()
   const [failed, setFailed] = useState(false)
   useEffect(() => setFailed(false), [id, version])
-  const px = request || (typeof size === 'number' ? Math.min(Math.ceil(size * 2 / 100) * 100, 600) : 400)
+  const px = request || coverRequestPx(size)
   const src = id && !failed ? coverUrl(id, px, version) : null
   const hintSrc = src && hint && hint !== px ? coverUrl(id, hint, version) : null
   const dims = typeof size === 'number' ? { width: size, height: size } : { width: '100%', aspectRatio: '1 / 1' }

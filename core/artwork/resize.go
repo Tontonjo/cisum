@@ -113,7 +113,7 @@ func resizeStaticImage(data []byte, size int, square bool) (io.Reader, int, erro
 		dstRect = dst.Bounds()
 	}
 	original = toFastScaleType(original)
-	xdraw.CatmullRom.Scale(dst, dstRect, original, bounds, draw.Src, nil)
+	scaler(size).Scale(dst, dstRect, original, bounds, draw.Src, nil)
 
 	buf := bufPool.Get().(*bytes.Buffer)
 	buf.Reset()
@@ -132,6 +132,19 @@ func resizeStaticImage(data []byte, size int, square bool) (io.Reader, int, erro
 	encoded := bytes.Clone(buf.Bytes())
 	bufPool.Put(buf)
 	return bytes.NewReader(encoded), originalSize, nil
+}
+
+// fastScaleMaxSize is the largest target size resized with the cheaper BiLinear kernel (Cisum).
+const fastScaleMaxSize = 600
+
+// scaler picks the resampling kernel. BiLinear has half the support of CatmullRom (about half the
+// work in each of the two scaling passes) and is still antialiased when shrinking; the difference
+// is not visible on thumbnails, so CatmullRom is kept for large images only.
+func scaler(size int) xdraw.Scaler {
+	if size <= fastScaleMaxSize {
+		return xdraw.BiLinear
+	}
+	return xdraw.CatmullRom
 }
 
 // formatQualityTag folds the encoder config (WebP toggle + quality) into a cache-key

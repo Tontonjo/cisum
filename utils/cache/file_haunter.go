@@ -2,6 +2,7 @@ package cache
 
 import (
 	"sort"
+	"sync/atomic"
 	"time"
 
 	"github.com/djherbis/fscache"
@@ -22,19 +23,25 @@ type haunterKV struct {
 //
 // Based on fscache.NewLRUHaunter
 func NewFileHaunter(name string, maxItems int, maxSize uint64, period time.Duration) fscache.LRUHaunter {
-	return &fileHaunter{
-		name:     name,
-		period:   period,
-		maxItems: maxItems,
-		maxSize:  maxSize,
-	}
+	return newFileHaunter(name, maxItems, maxSize, period)
+}
+
+func newFileHaunter(name string, maxItems int, maxSize uint64, period time.Duration) *fileHaunter {
+	h := &fileHaunter{name: name, period: period, maxItems: maxItems}
+	h.maxSize.Store(maxSize)
+	return h
 }
 
 type fileHaunter struct {
 	name     string
 	period   time.Duration
 	maxItems int
-	maxSize  uint64
+	maxSize  atomic.Uint64 // Cisum: adjustable at runtime (admin page), 0 = unlimited
+}
+
+// SetMaxSize changes the size limit applied by the next cleanup. 0 means unlimited.
+func (j *fileHaunter) SetMaxSize(maxSize uint64) {
+	j.maxSize.Store(maxSize)
 }
 
 func (j *fileHaunter) Next() time.Duration {
@@ -45,8 +52,9 @@ func (j *fileHaunter) Scrub(c fscache.CacheAccessor) (keysToReap []string) {
 	var count int
 	var size uint64
 	var okFiles []haunterKV
+	maxSize := j.maxSize.Load()
 
-	log.Trace("Running cache cleanup", "cache", j.name, "maxSize", humanize.Bytes(j.maxSize))
+	log.Trace("Running cache cleanup", "cache", j.name, "maxSize", humanize.Bytes(maxSize))
 	c.EnumerateEntries(func(key string, e fscache.Entry) bool {
 		if e.InUse() {
 			return true
@@ -104,8 +112,8 @@ func (j *fileHaunter) Scrub(c fscache.CacheAccessor) (keysToReap []string) {
 		}
 	}
 
-	if j.maxSize > 0 {
-		for size > j.maxSize {
+	if maxSize > 0 {
+		for size > maxSize {
 			if !collectKeysToReapFn() {
 				break
 			}

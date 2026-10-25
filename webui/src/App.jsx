@@ -1,4 +1,4 @@
-// Cisum web player v0.11.0 - Application root: theme, data cache, authentication and routes.
+// Cisum web player v0.11.3 - Application root: theme, data cache, authentication and routes.
 import { useEffect, useMemo, useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { ThemeProvider, CssBaseline, useMediaQuery } from '@mui/material'
@@ -10,7 +10,7 @@ import { usePlayer } from './store/player'
 import { usePreferences } from './store/preferences'
 import { useMe } from './store/me'
 import { coverUrl, getSession, clearSession, setUnauthorizedHandler } from './api/client'
-import { WEB_ROOT, SHARE_INFO } from './config'
+import { WEB_ROOT, SHARE_INFO, COVER_PX } from './config'
 import Layout from './components/Layout'
 import Login from './pages/Login'
 import Home from './pages/Home'
@@ -39,7 +39,7 @@ function useCoverSeed() {
       return
     }
     let cancelled = false
-    seedFromImage(coverUrl(coverArt, 96)).then((seed) => {
+    seedFromImage(coverUrl(coverArt, COVER_PX)).then((seed) => {
       if (!cancelled) setCoverSeed(seed)
     })
     return () => {

@@ -1,4 +1,4 @@
-// Cisum v0.7.0 - Administration API: server status, maintenance, user rights and import.
+// Cisum v0.11.3 - Administration API: server status, maintenance, image cache size, user rights and import.
 // All /cisum/admin routes are mounted behind adminOnlyMiddleware (see native_api.go).
 package nativeapi
 
@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"net/http"
@@ -19,9 +20,11 @@ import (
 	"time"
 
 	"github.com/deluan/rest"
+	"github.com/dustin/go-humanize"
 	"github.com/go-chi/chi/v5"
 	"github.com/navidrome/navidrome/conf"
 	"github.com/navidrome/navidrome/consts"
+	"github.com/navidrome/navidrome/core/artwork"
 	"github.com/navidrome/navidrome/core/ffmpeg"
 	"github.com/navidrome/navidrome/core/importer"
 	"github.com/navidrome/navidrome/core/permissions"
@@ -30,6 +33,7 @@ import (
 	"github.com/navidrome/navidrome/log"
 	"github.com/navidrome/navidrome/model"
 	"github.com/navidrome/navidrome/model/request"
+	"github.com/navidrome/navidrome/utils/cache"
 )
 
 // ---------- Current user ----------
@@ -57,6 +61,7 @@ func (api *Router) addCisumAdminRoutes(r chi.Router) {
 		r.Get("/status", api.adminStatus)
 		r.Post("/maintenance/{action}", api.adminMaintenance)
 		r.Get("/maintenance", api.maintenanceStatus)
+		r.Put("/image-cache", api.setImageCacheSize)
 		r.Get("/users/{id}/permissions", api.getUserPermissions)
 		r.Put("/users/{id}/permissions", api.setUserPermissions)
 		r.Post("/import/test", api.importTest)
@@ -100,13 +105,7 @@ func (api *Router) adminStatus(w http.ResponseWriter, r *http.Request) {
 	users, _ := api.ds.User().CountAll(ctx)
 	libs, _ := api.ds.Library().GetAll(ctx)
 
-	dbPath := strings.SplitN(conf.Server.DbPath, "?", 2)[0]
-	var dbBytes int64
-	for _, suffix := range []string{"", "-wal", "-shm"} {
-		if st, err := os.Stat(dbPath + suffix); err == nil {
-			dbBytes += st.Size()
-		}
-	}
+	dbPath, dbBytes := dbFileBytes()
 
 	ff := ffmpeg.New()
 	_ = rest.RespondWithJSON(w, http.StatusOK, map[string]any{
@@ -116,15 +115,16 @@ func (api *Router) adminStatus(w http.ResponseWriter, r *http.Request) {
 			"go":        runtime.Version(),
 			"ffmpeg":    ff.Version(),
 		},
-		"startedAt": consts.ServerStart,
-		"library":   stats,
-		"playlists": playlists,
-		"users":     users,
-		"libraries": libs,
-		"database":  map[string]any{"path": dbPath, "bytes": dbBytes},
-		"cache":     cacheFolders(),
-		"backups":   listBackups(),
-		"backupDir": conf.Server.Backup.Path.String(),
+		"startedAt":  consts.ServerStart,
+		"library":    stats,
+		"playlists":  playlists,
+		"users":      users,
+		"libraries":  libs,
+		"database":   map[string]any{"path": dbPath, "bytes": dbBytes},
+		"cache":      cacheFolders(),
+		"imageCache": api.imageCacheInfo(ctx),
+		"backups":    listBackups(),
+		"backupDir":  conf.Server.Backup.Path.String(),
 		"features": map[string]any{
 			"sharing":        conf.Server.EnableSharing,
 			"downloads":      conf.Server.EnableDownloads,
@@ -142,6 +142,77 @@ func (api *Router) adminStatus(w http.ResponseWriter, r *http.Request) {
 			"backupCount":    conf.Server.Backup.Count,
 		},
 	})
+}
+
+// ---------- Image cache size ----------
+
+// Limits of the image cache size accepted from the admin page, in MB (0 = unlimited).
+const (
+	imageCacheMinMB = 10
+	imageCacheMaxMB = 10_000_000
+)
+
+// imageCacheRestart is set when a saved size could not be applied to the running cache.
+var imageCacheRestart bool
+
+// imageCacheInfo describes the effective image cache size. mb is in decimal megabytes (as "500MB").
+func (api *Router) imageCacheInfo(ctx context.Context) map[string]any {
+	fromEnv := artwork.ImageCacheSizeEnv() != ""
+	stored := artwork.StoredImageCacheSize(ctx, api.ds)
+	if fromEnv {
+		stored = "" // the environment variable wins over the admin value
+	}
+	value := stored
+	if value == "" {
+		value = artwork.ConfigImageCacheSize()
+	}
+	size, unlimited, err := cache.ParseCacheSize(value)
+	return map[string]any{
+		"mb":              (size + 500_000) / 1_000_000,
+		"unlimited":       unlimited,
+		"disabled":        err == nil && size == 0 && !unlimited,
+		"fromAdmin":       stored != "",
+		"fromEnv":         fromEnv,
+		"envVar":          consts.ImageCacheSizeEnvVar,
+		"configValue":     artwork.ConfigImageCacheSize(),
+		"restartRequired": imageCacheRestart,
+		"minMB":           imageCacheMinMB,
+	}
+}
+
+// setImageCacheSize saves the image cache size: body {"mb": n}, 0 = unlimited.
+func (api *Router) setImageCacheSize(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		MB *int64 `json:"mb"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.MB == nil {
+		http.Error(w, `expected {"mb": number}`, http.StatusBadRequest)
+		return
+	}
+	mb := *body.MB
+	if mb != 0 && (mb < imageCacheMinMB || mb > imageCacheMaxMB) {
+		http.Error(w, fmt.Sprintf("size must be 0 (unlimited) or between %d and %d MB", imageCacheMinMB, imageCacheMaxMB), http.StatusBadRequest)
+		return
+	}
+	size := cache.UnlimitedCacheSize
+	if mb > 0 {
+		size = fmt.Sprintf("%dMB", mb)
+	}
+	ctx := r.Context()
+	restart, err := artwork.SetImageCacheSize(ctx, api.ds, size)
+	if errors.Is(err, artwork.ErrImageCacheSizeFromEnv) {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+	if err != nil {
+		log.Error(ctx, "Could not change the image cache size", "size", size, err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	imageCacheRestart = restart
+	user, _ := request.UserFrom(ctx)
+	log.Info(ctx, "Image cache size changed from the admin page", "size", size, "user", user.UserName, "restartRequired", restart)
+	_ = rest.RespondWithJSON(w, http.StatusOK, api.imageCacheInfo(ctx))
 }
 
 // cacheFolders measures each subfolder of the cache folder.
@@ -281,10 +352,7 @@ func (api *Router) maintenanceTask(action string) (func(context.Context) (string
 			return "Database statistics refreshed", db.Optimize(ctx)
 		}, false, true
 	case action == "vacuum":
-		return func(ctx context.Context) (string, error) {
-			_, err := db.Db().ExecContext(ctx, "VACUUM")
-			return "Database compacted", err
-		}, false, true
+		return compactDatabase, false, true
 	case action == "purge-missing":
 		return func(ctx context.Context) (string, error) {
 			return "Missing files removed (files still used by a playlist are kept)", api.maintenance.DeleteAllMissingFiles(ctx)
@@ -299,6 +367,41 @@ func (api *Router) maintenanceTask(action string) (func(context.Context) (string
 		}, true, true
 	}
 	return nil, false, false
+}
+
+// dbFileBytes returns the database path and its size on disk, WAL and shared-memory files included.
+func dbFileBytes() (string, int64) {
+	dbPath := strings.SplitN(conf.Server.DbPath, "?", 2)[0]
+	var total int64
+	for _, suffix := range []string{"", "-wal", "-shm"} {
+		if st, err := os.Stat(dbPath + suffix); err == nil {
+			total += st.Size()
+		}
+	}
+	return dbPath, total
+}
+
+// compactDatabase runs VACUUM, then truncates the WAL file. In WAL mode VACUUM writes the whole
+// rebuilt database into the -wal file; without the TRUNCATE checkpoint that file keeps its size on
+// disk, and the database looked twice as big after compacting.
+func compactDatabase(ctx context.Context) (string, error) {
+	_, before := dbFileBytes()
+	if _, err := db.Db().ExecContext(ctx, "VACUUM"); err != nil {
+		return "", err
+	}
+	var busy, logPages, checkpointed int
+	err := db.Db().QueryRowContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)").Scan(&busy, &logPages, &checkpointed)
+	if err != nil {
+		return "", fmt.Errorf("database compacted, but the WAL file could not be truncated: %w", err)
+	}
+	_, after := dbFileBytes()
+	msg := fmt.Sprintf("Database compacted: %s -> %s", humanize.Bytes(uint64(before)), humanize.Bytes(uint64(after)))
+	if busy != 0 {
+		// Another connection was reading: SQLite shrinks the WAL file at a later checkpoint.
+		msg += " (the WAL file is truncated later, the server was busy)"
+		log.Warn(ctx, "WAL truncate checkpoint was blocked after VACUUM", "logPages", logPages, "checkpointed", checkpointed)
+	}
+	return msg, nil
 }
 
 // removeWithProgress deletes a folder file by file, reporting progress.

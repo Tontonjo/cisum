@@ -82,6 +82,8 @@ func postRun() {
 // exit with a non-zero code. If the context is cancelled (a signal or a service stop), it returns nil.
 func runNavidrome(parentCtx context.Context) error {
 	defer db.Init(parentCtx)()
+	// Cisum: the image cache size saved from the admin page must be known before the cache is created.
+	artwork.ApplyStoredImageCacheSize(parentCtx, CreateDataStore())
 
 	g, ctx := errgroup.WithContext(parentCtx)
 	g.Go(startServer(ctx))

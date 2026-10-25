@@ -117,7 +117,7 @@ const (
 )
 
 const (
-	DefaultUICoverArtSize     = 300
+	DefaultUICoverArtSize     = 400 // Cisum: 300 in Navidrome, 400 = web UI card size
 	DefaultMaxImageUploadSize = "10MB"
 	DefaultMaxImageSize       = "20MB"
 )

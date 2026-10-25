@@ -1,8 +1,8 @@
-// Cisum web player v0.5.0 - Administration: database, backups, caches and missing files.
+// Cisum web player v0.11.3 - Administration: database, backups, caches (image cache size) and missing files.
 import { useEffect, useRef, useState } from 'react'
-import { Box, Button, LinearProgress, Typography, Dialog, DialogTitle, DialogContent, DialogActions } from '@mui/material'
+import { Alert, Box, Button, LinearProgress, TextField, Typography, Dialog, DialogTitle, DialogContent, DialogActions } from '@mui/material'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { getStatus, runMaintenance, getMissingFiles, getMaintenanceStatus } from '../../api/admin'
+import { getStatus, runMaintenance, getMissingFiles, getMaintenanceStatus, setImageCacheSize } from '../../api/admin'
 import { useUi } from '../../store/ui'
 import { formatBytes, formatDate } from '../../utils/format'
 import { Panel, InfoList, TaskProgress } from './Panel'
@@ -21,6 +21,69 @@ const CACHE_LABELS = {
   lyrics: ['Online lyrics', 'clear-lyrics'],
   images: ['Resized images', null],
   transcoding: ['Transcoded audio', null],
+}
+
+/** Size limit of the resized images cache, in MB. 0 = unlimited. Applied at once by the server. */
+function ImageCacheSize({ info }) {
+  const qc = useQueryClient()
+  const notify = useUi((s) => s.notify)
+  const current = info.unlimited ? 0 : info.mb
+  const [value, setValue] = useState(String(current))
+  const [saving, setSaving] = useState(false)
+  useEffect(() => setValue(String(current)), [current])
+
+  const mb = Number(value)
+  const valid = value.trim() !== '' && Number.isInteger(mb) && (mb === 0 || mb >= info.minMB)
+  const save = async () => {
+    setSaving(true)
+    try {
+      const res = await setImageCacheSize(mb)
+      qc.setQueryData(['adminStatus'], (s) => (s ? { ...s, imageCache: res } : s))
+      notify(res.restartRequired ? 'Saved, applied after a restart' : 'Image cache size changed')
+    } catch (e) {
+      notify(`Failed: ${e.message}`)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const effective = info.disabled ? 'disabled' : info.unlimited ? 'unlimited' : `${info.mb} MB`
+  const origin = info.fromEnv ? `set by the ${info.envVar} variable`
+    : info.fromAdmin ? 'set here' : `from the configuration (${info.configValue || 'default'})`
+  return (
+    <Box sx={{ mt: 2, pt: 2, borderTop: 1, borderColor: 'divider' }}>
+      <Typography variant="body1" sx={{ fontWeight: 550 }}>Resized images size limit</Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+        Current: {effective}, {origin}.
+        {info.unlimited ? ' Nothing is removed.' : ' The least recently used images are removed every 10 minutes when the limit is exceeded.'}
+        {info.fromAdmin && ` This value replaces the configuration file one; a ${info.envVar} variable would replace it.`}
+      </Typography>
+      <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+        <TextField
+          size="small" type="number" label="Size (MB)" value={value} onChange={(e) => setValue(e.target.value)}
+          disabled={info.fromEnv} error={!valid} helperText={valid ? '0 = unlimited' : `0 (unlimited) or at least ${info.minMB} MB`}
+          inputProps={{ min: 0, step: 100 }} sx={{ width: 180 }}
+        />
+        <Button variant="outlined" onClick={save} disabled={info.fromEnv || !valid || saving || mb === current} sx={{ mt: 0.25 }}>
+          {saving ? 'Saving...' : 'Save'}
+        </Button>
+      </Box>
+      {info.fromEnv && (
+        <Alert severity="info" sx={{ mt: 1.5 }}>
+          The size is fixed by the {info.envVar} environment variable. Remove it from the container and restart Cisum to manage it here.
+        </Alert>
+      )}
+      {!info.fromEnv && mb === 0 && valid && (
+        <Alert severity="info" sx={{ mt: 1.5 }}>
+          Unlimited: nothing is ever removed. The folder grows with the library and with every image size requested
+          by apps, and keeps old versions after a cover or format change. Check the disk space from time to time.
+        </Alert>
+      )}
+      {info.restartRequired && (
+        <Alert severity="warning" sx={{ mt: 1.5 }}>The image cache was disabled at startup: restart Cisum to apply the new size.</Alert>
+      )}
+    </Box>
+  )
 }
 
 export default function MaintenanceTab() {
@@ -96,6 +159,7 @@ export default function MaintenanceTab() {
             {CACHE_LABELS[c.name][1] && btn(CACHE_LABELS[c.name][1], 'Clear')}
           </Box>
         ))}
+        {s.imageCache && <ImageCacheSize info={s.imageCache} />}
       </Panel>
 
       <Panel

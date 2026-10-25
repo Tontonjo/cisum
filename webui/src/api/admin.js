@@ -1,4 +1,4 @@
-// Cisum web player v0.9.0 - Administration API (admin only on the server side).
+// Cisum web player v0.11.3 - Administration API (admin only on the server side).
 import { nativeApi, subsonic } from './client'
 
 export const getStatus = async () => (await nativeApi('/cisum/admin/status')).data
@@ -8,6 +8,10 @@ export const runMaintenance = async (action) =>
   (await nativeApi(`/cisum/admin/maintenance/${action}`, { method: 'POST' })).data
 
 export const getMaintenanceStatus = async () => (await nativeApi('/cisum/admin/maintenance')).data
+
+/** Sets the resized images cache size in MB (0 = unlimited). Returns the new imageCache status. */
+export const setImageCacheSize = async (mb) =>
+  (await nativeApi('/cisum/admin/image-cache', { method: 'PUT', body: { mb } })).data
 
 /** All playlists of the server (administrators see every playlist). */
 /** Every playlist of every user (admin_all: lists hide other people's private playlists, even for admins). */

@@ -1,4 +1,4 @@
-// Cisum web player v0.11.1 - Playlists: list with a remembered sort, multi-select export (M3U8 / ZIP), multi-file import
+// Cisum web player v0.11.3 - Playlists: list with a remembered sort, multi-select export (M3U8 / ZIP), multi-file import
 // (M3U / M3U8 / ZIP on the server, .nsp dynamic playlists here) and dynamic playlist creation.
 import { useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
@@ -23,7 +23,7 @@ import { useCan } from '../store/me'
 import { formatLength, plural } from '../utils/format'
 import { PageTitle, EmptyState } from '../components/Cards'
 import { TaskProgress } from '../components/admin/Panel'
-import Cover from '../components/Cover'
+import Cover, { coverRequestPx } from '../components/Cover'
 import NewPlaylistDialog from '../components/NewPlaylistDialog'
 import SmartPlaylistDialog from '../components/SmartPlaylistDialog'
 import { intentProps } from '../api/preload'
@@ -183,7 +183,7 @@ export default function Playlists() {
               sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1, py: 0.75, borderRadius: 4, '&:hover': { bgcolor: 'action.hover' } }}
             >
               {canImportExport && <Checkbox checked={isSelected} onChange={() => toggle(p.id)} inputProps={{ 'aria-label': `Select ${p.name}` }} />}
-              <Box component={Link} to={`/playlists/${p.id}`} {...intentProps('playlist', p, 200)} sx={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 2, color: 'inherit', textDecoration: 'none' }}>
+              <Box component={Link} to={`/playlists/${p.id}`} {...intentProps('playlist', p, coverRequestPx(64))} sx={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 2, color: 'inherit', textDecoration: 'none' }}>
                 <Cover id={playlistCover(p)} size={64} radius={3} />
                 <Box sx={{ minWidth: 0 }}>
                   <Typography variant="subtitle1" noWrap sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>

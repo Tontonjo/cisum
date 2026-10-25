@@ -1,4 +1,4 @@
-// Cisum web player v0.11.1 - App shell: navigation drawer (desktop), bottom bar (mobile), player.
+// Cisum web player v0.11.3 - App shell: navigation drawer (desktop), bottom bar (mobile), player.
 import { useEffect, useRef, useState } from 'react'
 import { Outlet, NavLink, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import {
@@ -20,6 +20,7 @@ import AdminPanelSettingsRounded from '@mui/icons-material/AdminPanelSettingsRou
 import CloseRounded from '@mui/icons-material/CloseRounded'
 import { useQuery } from '@tanstack/react-query'
 import { getPlaylists, playlistCover } from '../api/library'
+import { COVER_PX } from '../config'
 import { coverUrl } from '../api/client'
 import { useUi } from '../store/ui'
 import { usePlayer } from '../store/player'
@@ -167,7 +168,7 @@ function Drawer({ session }) {
       </Box>
       <Box sx={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 0.25, pb: 1 }}>
         {playlists.map((p) => (
-          <NavItem key={p.id} to={`/playlists/${p.id}`} label={p.name} image={coverUrl(playlistCover(p) || `pl-${p.id}`, 64)} linkProps={intentProps('playlist', p, 64)} />
+          <NavItem key={p.id} to={`/playlists/${p.id}`} label={p.name} image={coverUrl(playlistCover(p) || `pl-${p.id}`, COVER_PX)} linkProps={intentProps('playlist', p, COVER_PX)} />
         ))}
         {!playlists.length && (
           <Typography variant="body2" color="text.secondary" sx={{ px: 2, py: 1 }}>
