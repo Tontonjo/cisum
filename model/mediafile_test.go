@@ -225,6 +225,29 @@ var _ = Describe("MediaFiles", func() {
 						Expect(album.Tags).To(HaveKeyWithValue(TagMood, []string{"Happy", "Chill"}))
 					})
 				})
+				When("some tracks are missing (Cisum)", func() {
+					BeforeEach(func() {
+						mfs = MediaFiles{
+							{Path: "a.mp3", Missing: true, Duration: 300, Year: 2010, BirthTime: t("2020-01-01 10:00"), Tags: Tags{"genre": []string{"Rock", "Progressive Metal"}}},
+							{Path: "b.mp3", Duration: 100, Year: 2017, BirthTime: t("2026-10-26 20:36"), Tags: Tags{"genre": []string{"Instrumental Metal"}}},
+						}
+					})
+					It("aggregates only the present tracks, but keeps the oldest creation date", func() {
+						album := mfs.ToAlbum()
+						Expect(album.Tags).To(HaveKeyWithValue(TagGenre, []string{"Instrumental Metal"}))
+						Expect(album.SongCount).To(Equal(1))
+						Expect(album.Duration).To(BeNumerically("==", 100))
+						Expect(album.MinYear).To(Equal(2017))
+						Expect(album.Missing).To(BeFalse())
+						Expect(album.CreatedAt).To(Equal(t("2020-01-01 10:00")))
+					})
+					It("aggregates every track when all of them are missing", func() {
+						mfs[1].Missing = true
+						album := mfs.ToAlbum()
+						Expect(album.SongCount).To(Equal(2))
+						Expect(album.Missing).To(BeTrue())
+					})
+				})
 				When("we have tags with mismatching case", func() {
 					BeforeEach(func() {
 						mfs = MediaFiles{

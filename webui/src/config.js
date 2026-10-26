@@ -1,10 +1,10 @@
-// Cisum web player v0.11.6 - server-injected configuration.
+// Cisum web player v0.11.7 - server-injected configuration.
 // The server renders index.html as a Go template and injects window.__APP_CONFIG__
 // (a JSON string in production, absent when running the Vite dev server).
 
 const defaults = {
   version: 'dev',
-  cisumVersion: '0.11.6',
+  cisumVersion: '0.11.7',
   firstTime: false,
   baseURL: '',
   waveformEnabled: true,
@@ -27,7 +27,7 @@ function readConfig() {
 
 const config = readConfig()
 
-export const APP_VERSION = '0.11.6'
+export const APP_VERSION = '0.11.7'
 
 /**
  * Cover size (px) the server prepares in advance for each image (UICoverArtSize). Covers displayed

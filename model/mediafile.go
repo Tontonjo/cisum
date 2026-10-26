@@ -321,6 +321,14 @@ func (mfs MediaFiles) ToAlbum() Album {
 	if len(mfs) == 0 {
 		return Album{}
 	}
+	// Cisum v0.11.7: missing tracks (file deleted or renamed, kept as long as a playlist uses them) must
+	// not keep their old tags, years, duration and song count in the album: only the tracks present on disk
+	// are aggregated, or all of them when every track is missing. The creation date still considers every
+	// track, so re-encoded or renamed files do not move the album to "recently added".
+	all := mfs
+	if present := slices.DeleteFunc(slices.Clone(mfs), func(m MediaFile) bool { return m.Missing }); len(present) > 0 {
+		mfs = present
+	}
 	a := Album{SongCount: len(mfs), Tags: make(Tags), Participants: make(Participants), Discs: Discs{1: ""}}
 
 	// Sorting the mediafiles ensure the results will be consistent
@@ -387,8 +395,10 @@ func (mfs MediaFiles) ToAlbum() Album {
 		}
 
 		a.UpdatedAt = newer(a.UpdatedAt, m.UpdatedAt)
-		a.CreatedAt = older(a.CreatedAt, m.BirthTime)
 		a.Missing = a.Missing && m.Missing
+	}
+	for _, m := range all {
+		a.CreatedAt = older(a.CreatedAt, m.BirthTime)
 	}
 
 	a.EmbedArtPath = embedArtPath
