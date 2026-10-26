@@ -1,11 +1,11 @@
-# Cisum v0.11.5 - docker compose deployment
+# Cisum v0.11.6 - docker compose deployment
 # 1. Set the music path below (read-only is fine) and PUID/PGID (run "id" to see yours).
 # 2. docker compose up -d --build
 # 3. Open http://<server>:6874 and create the admin account.
 services:
   cisum:
     build: .
-    image: cisum:0.11.5
+    image: cisum:0.11.6
     container_name: cisum
     restart: unless-stopped
     ports:

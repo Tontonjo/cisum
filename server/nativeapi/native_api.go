@@ -94,6 +94,7 @@ func (api *Router) routes() http.Handler {
 		api.addSmartPlaylistRoutes(r)  // Cisum: dynamic playlist editor (fields, values, preview)
 		api.addPlayCountRoutes(r)      // Cisum: reset own album play counts
 		api.addRadioPlaybackRoutes(r)  // Cisum: web radio relay and current title
+		api.addGenreRoutes(r)          // Cisum: genres with live counts
 		api.addQueueRoute(r)
 		api.addMissingFilesRoute(r)
 		api.addKeepAliveRoute(r)

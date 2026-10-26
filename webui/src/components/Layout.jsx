@@ -1,4 +1,4 @@
-// Cisum web player v0.11.3 - App shell: navigation drawer (desktop), bottom bar (mobile), player.
+// Cisum web player v0.11.6 - App shell: navigation drawer (desktop), bottom bar (mobile), player.
 import { useEffect, useRef, useState } from 'react'
 import { Outlet, NavLink, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import {
@@ -9,6 +9,7 @@ import HomeRounded from '@mui/icons-material/HomeRounded'
 import AlbumRounded from '@mui/icons-material/AlbumRounded'
 import PersonRounded from '@mui/icons-material/PersonRounded'
 import MusicNoteRounded from '@mui/icons-material/MusicNoteRounded'
+import CategoryRounded from '@mui/icons-material/CategoryRounded'
 import FavoriteRounded from '@mui/icons-material/FavoriteRounded'
 import RadioRounded from '@mui/icons-material/RadioRounded'
 import QueueMusicRounded from '@mui/icons-material/QueueMusicRounded'
@@ -40,6 +41,7 @@ const LIBRARY = [
   { to: '/albums', label: 'Albums', icon: AlbumRounded },
   { to: '/artists', label: 'Artists', icon: PersonRounded },
   { to: '/songs', label: 'Songs', icon: MusicNoteRounded },
+  { to: '/genres', label: 'Genres', icon: CategoryRounded },
   { to: '/favorites', label: 'Favorites', icon: FavoriteRounded },
   { to: '/radios', label: 'Radios', icon: RadioRounded },
 ]
@@ -224,6 +226,9 @@ export default function Layout({ session }) {
               <>
                 <BrandMark size={30} />
                 <Typography variant="h5" component="div" sx={{ flex: 1 }}>Cisum</Typography>
+                <IconButton aria-label="Genres" onClick={() => navigate('/genres')}>
+                  <CategoryRounded />
+                </IconButton>
                 <IconButton aria-label="Radios" onClick={() => navigate('/radios')}>
                   <RadioRounded />
                 </IconButton>

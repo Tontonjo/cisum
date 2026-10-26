@@ -1,4 +1,4 @@
-// Cisum web player v0.11.5 - Application root: theme, data cache, authentication and routes.
+// Cisum web player v0.11.6 - Application root: theme, data cache, authentication and routes.
 import { useEffect, useMemo, useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { ThemeProvider, CssBaseline, useMediaQuery } from '@mui/material'
@@ -20,6 +20,8 @@ import AlbumDetail from './pages/AlbumDetail'
 import Artists from './pages/Artists'
 import ArtistDetail from './pages/ArtistDetail'
 import Songs from './pages/Songs'
+import Genres from './pages/Genres'
+import GenreDetail from './pages/GenreDetail'
 import Favorites from './pages/Favorites'
 import Radios from './pages/Radios'
 import Playlists from './pages/Playlists'
@@ -110,6 +112,8 @@ export default function App() {
                 <Route path="artists" element={<Artists />} />
                 <Route path="artists/:id" element={<ArtistDetail />} />
                 <Route path="songs" element={<Songs />} />
+                <Route path="genres" element={<Genres />} />
+                <Route path="genres/:id" element={<GenreDetail />} />
                 <Route path="favorites" element={<Favorites />} />
                 <Route path="radios" element={<Radios />} />
                 <Route path="playlists" element={<Playlists />} />

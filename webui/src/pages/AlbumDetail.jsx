@@ -1,5 +1,6 @@
-// Cisum web player v0.11.5 - Album page: header (with play count and options menu) and track list (grouped by disc).
+// Cisum web player v0.11.6 - Album page: header (with play count and options menu) and track list (grouped by disc).
 // The header is drawn at once from the link's preview (api/preload.js) while the songs load.
+// v0.11.6: genres shown as chips linking to their genre page.
 // v0.11.5: when the album is deleted from the library (scan, see api/events.js), the page goes back.
 import { Fragment, useEffect, useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
@@ -22,6 +23,7 @@ import { formatLength, plural } from '../utils/format'
 import DetailHeader from '../components/DetailHeader'
 import TrackList from '../components/TrackList'
 import StarButton from '../components/StarButton'
+import GenreChips from '../components/GenreChips'
 import { DetailHeaderSkeleton, TrackListSkeleton } from '../components/Skeletons'
 
 export default function AlbumDetail() {
@@ -66,7 +68,7 @@ export default function AlbumDetail() {
   const multiDisc = discs.length > 1
   // Empty lines are drawn as a non-breaking space so their height is reserved until the data arrives
   const meta = [
-    shown.year, album?.genre,
+    shown.year,
     songCount != null && plural(songCount, 'song'),
     shown.duration != null && formatLength(shown.duration),
     shown.playCount != null && plural(shown.playCount, 'play'),
@@ -100,7 +102,9 @@ export default function AlbumDetail() {
             </Tooltip>
           </>
         }
-      />
+      >
+        <GenreChips genres={album?.genres} />
+      </DetailHeader>
       {!album && <TrackListSkeleton count={songCount} />}
       {discs.map((d) => {
         const discTracks = tracks.filter((t) => (t.disc || 1) === d)

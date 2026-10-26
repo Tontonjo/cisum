@@ -1,4 +1,4 @@
-// Cisum web player v0.11.5 - Server events: reloads library data when the library changes.
+// Cisum web player v0.11.6 - Server events: reloads library data when the library changes.
 // The server pushes Server-Sent Events on /api/events. After a scan that changed the library
 // (files added, modified or deleted), it sends "refreshResource" with {"*":"*"}: every library
 // query is then marked stale and the ones on screen reload at once, so deleted albums and songs
@@ -11,7 +11,7 @@ import { queryClient } from './queryClient'
 // Queries that show library content (albums, songs, artists, counts, missing files)
 const LIBRARY_KEYS = new Set([
   'album', 'albums', 'albumList', 'artist', 'artists', 'artistInfo', 'topSongs', 'songs',
-  'starred', 'search', 'playlist', 'playlists', 'editablePlaylists', 'adminMissing', 'adminStatus',
+  'starred', 'search', 'genres', 'genre', 'playlist', 'playlists', 'editablePlaylists', 'adminMissing', 'adminStatus',
 ])
 
 const RETRY_MIN_MS = 5_000

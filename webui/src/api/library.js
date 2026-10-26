@@ -1,4 +1,4 @@
-// Cisum web player v0.11.1 - Library data access and normalization.
+// Cisum web player v0.11.6 - Library data access and normalization.
 // Every song, from either API, is normalized to the same Track shape:
 // { id, title, artist, artistId, album, albumId, duration, track, disc, year, starred, starredAt,
 //   playCount, createdAt, coverArt, missing }
@@ -174,6 +174,13 @@ export const ARTIST_SORTS = {
   random: { label: 'Random', order: 'ASC', random: true },
 }
 
+export const GENRE_SORTS = {
+  name: { label: 'Name', order: 'ASC', value: byName('name') },
+  album_count: { label: 'Albums', order: 'DESC', value: (g) => g.albumCount, detail: (g) => plural(g.albumCount, 'album') },
+  song_count: { label: 'Songs', order: 'DESC', value: (g) => g.songCount, detail: (g) => plural(g.songCount, 'song') },
+  artist_count: { label: 'Artists', order: 'DESC', value: (g) => g.artistCount, detail: (g) => plural(g.artistCount, 'artist') },
+}
+
 export const PLAYLIST_SORTS = {
   name: { label: 'Name', order: 'ASC', value: byName('name') },
   owner: { label: 'Owner', order: 'ASC', value: byName('ownerName') },
@@ -231,7 +238,7 @@ export async function getAlbumsPage({ sort = 'recently_added', dir, start = 0, c
   return { items: data.map(albumFromNative), total }
 }
 
-export async function getSongsPage({ sort = 'title', dir, start = 0, count = 100 }) {
+export async function getSongsPage({ sort = 'title', dir, start = 0, count = 100, filter = {} }) {
   const { data, total } = await nativeApi('/song', {
     query: {
       _sort: sort,
@@ -239,6 +246,7 @@ export async function getSongsPage({ sort = 'title', dir, start = 0, count = 100
       _start: start,
       _end: start + count,
       missing: false,
+      ...filter,
     },
   })
   return { items: data.map((s) => trackFromNative(s)), total }
@@ -249,15 +257,32 @@ export async function getSongsPage({ sort = 'title', dir, start = 0, count = 100
 export async function getAlbum(id) {
   const r = await subsonic('getAlbum', { id })
   const a = r.album
-  return { ...albumFromSubsonic(a), genre: a.genre, tracks: (a.song || []).map(trackFromSubsonic) }
+  // OpenSubsonic "genres" lists every genre of the album; "genre" only the first one
+  const genres = a.genres?.length ? a.genres.map((g) => g.name) : a.genre ? [a.genre] : []
+  return { ...albumFromSubsonic(a), genre: a.genre, genres, tracks: (a.song || []).map(trackFromSubsonic) }
 }
 
-/** All album artists (same set as the Subsonic artist list), with album, song and play counts. */
-export async function getArtists() {
+/**
+ * All album artists (same set as the Subsonic artist list), with album, song and play counts.
+ * filter: extra native API filters, e.g. { genre_id } for the artists of a genre.
+ */
+export async function getArtists(filter = {}) {
   const { data } = await nativeApi('/artist', {
-    query: { role: 'albumartist', missing: false, _sort: 'name', _order: 'ASC', _start: 0, _end: 100000 },
+    query: { role: 'albumartist', missing: false, _sort: 'name', _order: 'ASC', _start: 0, _end: 100000, ...filter },
   })
   return data.map(artistFromNative)
+}
+
+// ---------- Genres ----------
+
+/** Genres that still have albums or songs: [{ id, name, albumCount, songCount, artistCount }], by name. */
+export async function getGenres() {
+  return (await nativeApi('/cisum/genres')).data
+}
+
+/** One genre with its counts. */
+export async function getGenre(id) {
+  return (await nativeApi(`/cisum/genres/${encodeURIComponent(id)}`)).data
 }
 
 export async function getArtist(id) {

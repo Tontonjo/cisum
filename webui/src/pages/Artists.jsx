@@ -1,4 +1,4 @@
-// Cisum web player v0.6.0 - All artists with a quick filter and a remembered sort.
+// Cisum web player v0.11.6 - All artists with a quick filter and a remembered sort.
 import { useState } from 'react'
 import { TextField, InputAdornment } from '@mui/material'
 import FilterListRounded from '@mui/icons-material/FilterListRounded'
@@ -10,7 +10,7 @@ import SortChips from '../components/SortChips'
 
 export default function Artists() {
   const [filter, setFilter] = useState('')
-  const { data, isSuccess } = useQuery({ queryKey: ['artists'], queryFn: getArtists })
+  const { data, isSuccess } = useQuery({ queryKey: ['artists'], queryFn: () => getArtists() })
   const { sort, onSort, sorted } = useClientSort('artists', ARTIST_SORTS, 'name', data)
   const f = filter.trim().toLowerCase()
   const shown = f ? sorted.filter((a) => a.name.toLowerCase().includes(f)) : sorted

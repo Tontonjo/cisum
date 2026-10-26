@@ -113,6 +113,16 @@ func AlbumArtistsByGenreID(tagIDs []string) Sqlizer {
 	return Expr("artist.id IN ("+sub+")", args...)
 }
 
+// ActiveAlbumArtistsByGenreID matches album artists of albums present on disk (not missing) tagged with any
+// of the genre ids (Cisum genre page). tagIDs: a string or a list of strings, as received by the REST filters.
+func ActiveAlbumArtistsByGenreID(tagIDs any) Sqlizer {
+	sub, args, _ := Select("aa.artist_id").From("album_artists aa").
+		Join("album_tags at on at.album_id = aa.album_id").
+		Join("album al on al.id = aa.album_id").
+		Where(And{Eq{"aa.role": "albumartist"}, Eq{"al.missing": false}, Eq{"at.tag_id": tagIDs}}).ToSql()
+	return Expr("artist.id IN ("+sub+")", args...)
+}
+
 func genreFilter(filter genreFilterDef) func(_ string, v any) Sqlizer {
 	return func(_ string, v any) Sqlizer {
 		return filter.ByID(v)

@@ -143,6 +143,8 @@ func NewArtistRepository(db dbx.Builder) model.ArtistRepository {
 		"role":       roleFilter,
 		"missing":    booleanFilter,
 		"library_id": artistLibraryIdFilter,
+		// Cisum: album artists of a genre (genre page)
+		"genre_id": func(_ string, v any) Sqlizer { return ActiveAlbumArtistsByGenreID(v) },
 	})
 	r.setSortMappings(map[string]string{ //nolint:gosec
 		"name":        "order_artist_name",
