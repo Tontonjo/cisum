@@ -8,7 +8,7 @@
 [![Ko-Fi](https://badgen.net/badge/Buy%20me%20a%20Coffee/Link?icon=buymeacoffee)](https://ko-fi.com/tontonjo)
 [![Infomaniak](https://badgen.net/badge/Infomaniak/Affiliated%20link?icon=K)](https://www.infomaniak.com/goto/fr/home?utm_term=6151f412daf35)
 
-Version: 0.11.7
+Version: 0.11.8
 
 ## Description
 Cisum is a self-hosted music server running in Docker, with a modern web player.  
@@ -23,6 +23,8 @@ It is based on [Navidrome](https://github.com/navidrome/navidrome) and keeps the
 - Artist pictures, biography and similar artists
 - Playlists: songs whose file disappears are kept and come back automatically
 - Dynamic playlists: built from rules (and / or), sort, limit, rebuilt each time they are opened
+- Rules on MediaMonkey Custom 1 to 10 and on any other tag added from the administration page (run a full scan after adding tags)
+- Song details: path, format, bitrate, sample rate, play count...
 - Playlist import / export (M3U, M3U8, ZIP, .nsp)
 - Playlist sharing between users (listeners and editors)
 - Web radios, with the radio-browser.info directory

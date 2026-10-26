@@ -1,4 +1,4 @@
-// Cisum web player v0.10.0 - Dynamic playlists: field catalog, operators, templates, conversion
+// Cisum web player v0.11.8 - Dynamic playlists: field catalog, operators, templates, conversion
 // between the editor model and Navidrome smart playlist rules (playlist.rules / .nsp files).
 //
 // Editor model (one level, as chosen for Cisum):
@@ -8,7 +8,7 @@
 // ---------- Field catalog ----------
 
 // Value types: text, number, date, bool, duration (edited in minutes), rating (0-5), playlist
-export const GROUPS = ['Song', 'People', 'Tags', 'Your activity', 'Album', 'Artist', 'File', 'Identifiers']
+export const GROUPS = ['Song', 'People', 'Tags', 'Custom tags', 'Your activity', 'Album', 'Artist', 'File', 'Identifiers']
 
 const KNOWN = {
   title: ['Title', 'Song', 'text'],
@@ -108,6 +108,16 @@ const POPULAR = ['artist', 'albumartist', 'genre', 'album', 'title', 'year', 'lo
  * Builds the field list from the server catalog (GET /cisum/smart/fields). Tags and roles depend
  * on the server's mappings.yaml, so they are only known from it. Returns [{ name, label, group, type, nullable }].
  */
+/**
+ * Name shown for a custom tag (MediaMonkey Custom 1-10 or free tag of the admin page).
+ * custom3 -> "Custom 3"; with the label "Energy": "Energy (Custom 3)"; free tag "energy" -> its label or "Energy".
+ */
+export function customTagLabel(name, label) {
+  const n = /^custom(\d+)$/.exec(name)
+  if (n) return label ? `${label} (Custom ${n[1]})` : `Custom ${n[1]}`
+  return label || capitalize(name)
+}
+
 export function buildFields(serverFields = []) {
   const byName = new Map()
   for (const f of serverFields) {
@@ -117,6 +127,8 @@ export function buildFields(serverFields = []) {
       field = { name: f.name, label: known[0], group: known[1], type: known[2] }
     } else if (f.kind === 'role') {
       field = { name: f.name, label: NAMES[f.name] || capitalize(f.name), group: 'People', type: 'text', kind: 'role' }
+    } else if (f.kind === 'tag' && f.custom) {
+      field = { name: f.name, label: customTagLabel(f.name, f.label), group: 'Custom tags', type: f.numeric ? 'number' : 'text', kind: 'tag' }
     } else if (f.kind === 'tag') {
       field = { name: f.name, label: NAMES[f.name] || capitalize(f.name), group: 'Tags', type: f.numeric ? 'number' : 'text', kind: 'tag' }
     } else {
@@ -128,11 +140,13 @@ export function buildFields(serverFields = []) {
   // The playlist pseudo-field (inPlaylist / notInPlaylist) is not a criteria field on the server
   byName.set('playlist', { name: 'playlist', label: 'Playlist', group: 'Song', type: 'playlist' })
   const order = (f) => {
+    const custom = /^custom(\d+)$/.exec(f.name)
+    if (custom && f.group === 'Custom tags') return Number(custom[1]) // MediaMonkey Custom 1-10 in their order
     const p = POPULAR.indexOf(f.name)
     return p >= 0 ? p : 100
   }
   return [...byName.values()].sort(
-    (a, b) => GROUPS.indexOf(a.group) - GROUPS.indexOf(b.group) || order(a) - order(b) || a.label.localeCompare(b.label),
+    (a, b) => GROUPS.indexOf(a.group) - GROUPS.indexOf(b.group) || order(a) - order(b) || a.label.localeCompare(b.label, undefined, { numeric: true }),
   )
 }
 

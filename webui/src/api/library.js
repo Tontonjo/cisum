@@ -1,4 +1,4 @@
-// Cisum web player v0.11.6 - Library data access and normalization.
+// Cisum web player v0.11.8 - Library data access and normalization.
 // Every song, from either API, is normalized to the same Track shape:
 // { id, title, artist, artistId, album, albumId, duration, track, disc, year, starred, starredAt,
 //   playCount, createdAt, coverArt, missing }
@@ -353,6 +353,11 @@ export async function getLyrics(id) {
     lines: (best.line || []).map((l) => ({ time: best.synced ? l.start : null, text: l.value })),
   }
 }
+
+// ---------- Song details ----------
+
+/** Full song record of the native API (file, audio properties and the user's play data). */
+export const getSongDetails = async (id) => (await nativeApi(`/song/${id}`)).data
 
 // ---------- Waveform ----------
 

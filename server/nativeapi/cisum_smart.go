@@ -1,4 +1,4 @@
-// Cisum v0.10.0 - Dynamic playlists: criteria catalog, value suggestions and live preview of rules.
+// Cisum v0.11.8 - Dynamic playlists: criteria catalog, value suggestions and live preview of rules.
 // Dynamic playlists are Navidrome smart playlists (playlist.rules); they are created and edited with
 // the regular /playlist REST endpoints. These routes only help the web player's rules editor.
 package nativeapi
@@ -44,11 +44,17 @@ type smartField struct {
 	Numeric  bool   `json:"numeric,omitempty"`
 	Boolean  bool   `json:"boolean,omitempty"`
 	Nullable bool   `json:"nullable,omitempty"`
+	Custom   bool   `json:"custom,omitempty"` // MediaMonkey Custom 1-10 or free tag (model/cisum_tags.go)
+	Label    string `json:"label,omitempty"`  // label set on the admin page (custom tags only)
 }
 
 // smartFields lists every canonical criteria field, including the tags of mappings.yaml and the
 // artist roles registered at start-up. Backward compatibility aliases are left out.
-func smartFields(w http.ResponseWriter, _ *http.Request) {
+func smartFields(w http.ResponseWriter, r *http.Request) {
+	saved, err := model.LoadCisumTags()
+	if err != nil {
+		log.Warn(r.Context(), "Could not read the custom tag labels", err)
+	}
 	names := criteria.AllFieldNames()
 	slices.Sort(names)
 	fields := make([]smartField, 0, len(names))
@@ -64,10 +70,15 @@ func smartFields(w http.ResponseWriter, _ *http.Request) {
 		case info.IsTag:
 			kind = "tag"
 		}
-		fields = append(fields, smartField{
+		f := smartField{
 			Name: name, Kind: kind, Numeric: info.Numeric, Boolean: info.Boolean,
 			Nullable: info.Nullable || info.IsTag || info.IsRole,
-		})
+		}
+		if info.IsTag && model.IsCustomTag(name) {
+			f.Custom = true
+			f.Label = saved.Labels[name]
+		}
+		fields = append(fields, f)
 	}
 	_ = rest.RespondWithJSON(w, http.StatusOK, fields)
 }

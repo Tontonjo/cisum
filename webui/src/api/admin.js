@@ -1,4 +1,4 @@
-// Cisum web player v0.11.4 - Administration API (admin only on the server side).
+// Cisum web player v0.11.8 - Administration API (admin only on the server side).
 import { nativeApi, subsonic } from './client'
 
 export const getStatus = async () => (await nativeApi('/cisum/admin/status')).data
@@ -23,6 +23,11 @@ export const setImageCacheSize = async (mb) =>
 
 /** All playlists of the server (administrators see every playlist). */
 /** Every playlist of every user (admin_all: lists hide other people's private playlists, even for admins). */
+/** Extra tags: { builtIn, tags, active, labels, restartRequired, max } (see server/nativeapi/cisum_tags.go). */
+export const getCisumTags = async () => (await nativeApi('/cisum/admin/tags')).data
+export const saveCisumTags = async (tags, labels) =>
+  (await nativeApi('/cisum/admin/tags', { method: 'PUT', body: { tags, labels } })).data
+
 export async function getAllPlaylists() {
   const { data } = await nativeApi('/playlist', { query: { _sort: 'name', _order: 'ASC', _start: 0, _end: 5000, admin_all: true } })
   return data

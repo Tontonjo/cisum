@@ -1,4 +1,4 @@
-// Cisum web player v0.11.2 - Track list used by albums, playlists, songs, search and favorites.
+// Cisum web player v0.11.8 - Track list used by albums, playlists, songs, search and favorites.
 // Missing tracks (file not found on disk) stay visible but greyed out and cannot be played.
 import { useState, memo } from 'react'
 import { Box, Typography, IconButton, Menu, MenuItem, ListItemIcon, Tooltip, Divider, useTheme, useMediaQuery } from '@mui/material'
@@ -15,8 +15,10 @@ import AlbumRounded from '@mui/icons-material/AlbumRounded'
 import PersonRounded from '@mui/icons-material/PersonRounded'
 import DownloadRounded from '@mui/icons-material/DownloadRounded'
 import ShareRounded from '@mui/icons-material/ShareRounded'
+import InfoOutlined from '@mui/icons-material/InfoOutlined'
 import { useCan } from '../store/me'
 import ShareDialog from './ShareDialog'
+import SongDetailsDialog from './SongDetailsDialog'
 import { DndContext, closestCenter, PointerSensor, KeyboardSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, useSortable, verticalListSortingStrategy, sortableKeyboardCoordinates } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -38,6 +40,8 @@ const albumPreview = (t) => ({
   ...(t.coverArt?.startsWith(`al-${t.albumId}`) && { coverArt: t.coverArt }),
 })
 
+const stopEvent = (e) => e.stopPropagation()
+
 export function SongMenu({ track, anchor, onClose, extraItems = [] }) {
   const navigate = useNavigate()
   const { playNext, addToQueue } = usePlayer()
@@ -45,14 +49,17 @@ export function SongMenu({ track, anchor, onClose, extraItems = [] }) {
   const canDownload = useCan('download')
   const canShare = useCan('share')
   const [sharing, setSharing] = useState(false)
+  const [details, setDetails] = useState(false)
   const act = (fn) => () => {
     onClose()
     fn()
   }
   const playable = !track.missing
+  // The menu and its dialogs render in portals, but React still bubbles their events to the row that
+  // owns them: without this wrapper, a click on a menu item (or on the backdrop) also replays the song.
   return (
-    <>
-    <Menu anchorEl={anchor} open={!!anchor && !sharing} onClose={onClose}>
+    <Box component="span" onClick={stopEvent} onKeyDown={stopEvent} onPointerDown={stopEvent} sx={{ display: 'contents' }}>
+    <Menu anchorEl={anchor} open={!!anchor && !sharing && !details} onClose={onClose}>
       {playable && (
         <MenuItem onClick={act(() => { playNext([track]); notify(`"${track.title}" plays next`) })}>
           <ListItemIcon><QueuePlayNextRounded fontSize="small" /></ListItemIcon>Play next
@@ -89,6 +96,9 @@ export function SongMenu({ track, anchor, onClose, extraItems = [] }) {
           <ListItemIcon><ShareRounded fontSize="small" /></ListItemIcon>Share
         </MenuItem>
       )}
+      <MenuItem onClick={() => setDetails(true)}>
+        <ListItemIcon><InfoOutlined fontSize="small" /></ListItemIcon>Details
+      </MenuItem>
       {extraItems.length > 0 && <Divider />}
       {extraItems.map((item) => (
         <MenuItem key={item.label} onClick={act(item.onClick)} sx={item.danger ? { color: 'error.main' } : undefined}>
@@ -98,7 +108,8 @@ export function SongMenu({ track, anchor, onClose, extraItems = [] }) {
       ))}
     </Menu>
     {sharing && <ShareDialog open ids={[track.id]} title={`${track.title} - ${track.artist}`} onClose={() => { setSharing(false); onClose() }} />}
-    </>
+    {details && <SongDetailsDialog track={track} onClose={() => { setDetails(false); onClose() }} />}
+    </Box>
   )
 }
 

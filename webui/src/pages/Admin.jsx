@@ -1,4 +1,4 @@
-// Cisum web player v0.5.0 - Administration panel (administrators only).
+// Cisum web player v0.11.8 - Administration panel (administrators only).
 import { useParams, useNavigate, Navigate } from 'react-router-dom'
 import { Tabs, Tab, Box } from '@mui/material'
 import { PageTitle } from '../components/Cards'
@@ -9,12 +9,14 @@ import MaintenanceTab from '../components/admin/MaintenanceTab'
 import ImportTab from '../components/admin/ImportTab'
 import SharesTab from '../components/admin/SharesTab'
 import PlaylistsTab from '../components/admin/PlaylistsTab'
+import TagsTab from '../components/admin/TagsTab'
 
 const TABS = [
   ['overview', 'Overview', OverviewTab],
   ['users', 'Users', UsersTab],
   ['libraries', 'Libraries', LibrariesTab],
   ['playlists', 'Playlists', PlaylistsTab],
+  ['tags', 'Tags', TagsTab],
   ['maintenance', 'Maintenance', MaintenanceTab],
   ['import', 'Import', ImportTab],
   ['shares', 'Shares', SharesTab],

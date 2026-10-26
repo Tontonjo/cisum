@@ -337,6 +337,9 @@ func loadTagMappings() {
 		log.Error("No tag mappings found in mappings.yaml, check the format")
 	}
 
+	// Cisum: MediaMonkey Custom 1-10 and the free tags of the admin page (before the configuration file overrides)
+	addCisumTagMappings(&_mappings)
+
 	// Use Scanner.GenreSeparators if specified and Tags.genre is not defined
 	if conf.Server.Scanner.GenreSeparators != "" && len(conf.Server.Tags["genre"].Aliases) == 0 {
 		genreConf := _mappings.Main[TagName("genre")]

@@ -1,16 +1,18 @@
-// Cisum web player v0.7.0 - Full screen "now playing" view.
+// Cisum web player v0.11.8 - Full screen "now playing" view.
 // Left: cover, titles, large waveform and controls. Right: Lyrics / Artist / Queue tabs.
 // On phones the player is the first tab and the panels follow. A web radio shows Station / Queue.
-import { forwardRef, useEffect } from 'react'
+import { forwardRef, useEffect, useState } from 'react'
 import { Dialog, Slide, Box, Typography, IconButton, Tabs, Tab, Tooltip, useMediaQuery, useTheme, alpha } from '@mui/material'
 import { Link } from 'react-router-dom'
 import KeyboardArrowDownRounded from '@mui/icons-material/KeyboardArrowDownRounded'
 import PlaylistAddRounded from '@mui/icons-material/PlaylistAddRounded'
+import InfoOutlined from '@mui/icons-material/InfoOutlined'
 import { usePlayer } from '../store/player'
 import { useUi } from '../store/ui'
 import Waveform from './Waveform'
 import Cover from './Cover'
 import StarButton from './StarButton'
+import SongDetailsDialog from './SongDetailsDialog'
 import LyricsPanel, { CompactLyrics, useLyrics } from './LyricsPanel'
 import { usePreferences } from '../store/preferences'
 import ArtistPanel from './ArtistPanel'
@@ -27,6 +29,7 @@ function PlayerColumn({ track: queued, showLyrics }) {
   const { m3 } = useTheme()
   const { pickPlaylist, closeNowPlaying, setNowPlayingTab } = useUi()
   const lyricsUnderCover = usePreferences((s) => s.lyricsUnderCover)
+  const [details, setDetails] = useState(false)
   const track = useDisplayTrack(queued)
   const radio = !!track.isRadio
   const { data: lyrics } = useLyrics(radio ? null : track.id)
@@ -64,6 +67,12 @@ function PlayerColumn({ track: queued, showLyrics }) {
               </IconButton>
             </Tooltip>
             <StarButton track={track} />
+            <Tooltip title="Details">
+              <IconButton onClick={() => setDetails(true)} aria-label="Song details">
+                <InfoOutlined />
+              </IconButton>
+            </Tooltip>
+            {details && <SongDetailsDialog track={track} onClose={() => setDetails(false)} />}
           </>
         )}
       </Box>
