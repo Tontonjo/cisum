@@ -1,9 +1,10 @@
-// Cisum web player v0.11.3 - Application root: theme, data cache, authentication and routes.
+// Cisum web player v0.11.5 - Application root: theme, data cache, authentication and routes.
 import { useEffect, useMemo, useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { ThemeProvider, CssBaseline, useMediaQuery } from '@mui/material'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClient } from './api/queryClient'
+import { startLibraryEvents } from './api/events'
 import { buildTheme, seedFromImage } from './theme/theme'
 import { useSettings } from './store/settings'
 import { usePlayer } from './store/player'
@@ -71,6 +72,11 @@ export default function App() {
       usePreferences.getState().load()
       useMe.getState().load()
     }
+  }, [session.loggedIn, session.username])
+
+  // Library changes pushed by the server (scan): lists and pages reload, deleted items disappear
+  useEffect(() => {
+    if (session.loggedIn && !SHARE_INFO) return startLibraryEvents()
   }, [session.loggedIn, session.username])
 
   useEffect(() => {

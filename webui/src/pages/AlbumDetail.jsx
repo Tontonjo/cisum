@@ -1,7 +1,8 @@
-// Cisum web player v0.11.0 - Album page: header (with play count and options menu) and track list (grouped by disc).
+// Cisum web player v0.11.5 - Album page: header (with play count and options menu) and track list (grouped by disc).
 // The header is drawn at once from the link's preview (api/preload.js) while the songs load.
-import { Fragment, useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
+// v0.11.5: when the album is deleted from the library (scan, see api/events.js), the page goes back.
+import { Fragment, useEffect, useState } from 'react'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import {
   Box, IconButton, Tooltip, Typography, Menu, MenuItem, ListItemIcon,
   Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions, Button,
@@ -34,10 +35,11 @@ export default function AlbumDetail() {
   const [resetting, setResetting] = useState(false)
   const qc = useQueryClient()
   const notify = useUi((s) => s.notify)
-  const { data: album } = useQuery(albumQuery(id))
+  const { data: album, error } = useQuery(albumQuery(id))
   const preview = getPreview('album', id)
   // Full album once loaded, otherwise what the link already knew
   const shown = album || preview
+  useLeaveWhenGone(error?.code === 70 || album?.tracks.length === 0)
 
   const resetPlays = async () => {
     setResetting(true)
@@ -134,4 +136,20 @@ export default function AlbumDetail() {
       {sharing && <ShareDialog open ids={[shown.id]} title={[shown.name, shown.artist].filter(Boolean).join(' - ')} onClose={() => setSharing(false)} />}
     </>
   )
+}
+
+/**
+ * Leaves the page when the album no longer exists: not found, or all its songs deleted (the server
+ * keeps such an album as "missing" with no songs). Goes back to the previous page of the web player,
+ * or to the album list when the page was opened directly.
+ */
+function useLeaveWhenGone(gone) {
+  const navigate = useNavigate()
+  const notify = useUi((s) => s.notify)
+  useEffect(() => {
+    if (!gone) return
+    notify('This album is no longer in the library')
+    if (window.history.state?.idx > 0) navigate(-1)
+    else navigate('/albums', { replace: true })
+  }, [gone, navigate, notify])
 }

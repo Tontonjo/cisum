@@ -1,4 +1,4 @@
-// Cisum web player v0.7.0 - HTTP client for the native API (/api) and the Subsonic API (/rest).
+// Cisum web player v0.11.5 - HTTP client for the native API (/api) and the Subsonic API (/rest).
 // Session keys are shared with the classic UI (/app), so logging in once works for both.
 import config from '../config'
 
@@ -162,7 +162,8 @@ export async function subsonic(method, params) {
   const r = body['subsonic-response']
   if (r?.status !== 'ok') {
     if (r?.error?.code === 40 || r?.error?.code === 44) onUnauthorized()
-    throw new Error(r?.error?.message || 'Server error')
+    // The Subsonic error code is kept (70 = not found, e.g. an album deleted from the library)
+    throw Object.assign(new Error(r?.error?.message || 'Server error'), { code: r?.error?.code })
   }
   return r
 }

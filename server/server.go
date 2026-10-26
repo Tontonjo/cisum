@@ -185,15 +185,15 @@ func (s *Server) initRoutes() {
 		JWTVerifier,
 	}
 
-	// Mount the Native API /events endpoint with all default middlewares, adding the authentication middlewares
-	if conf.Server.DevActivityPanel {
-		r.Group(func(r chi.Router) {
-			r.Use(defaultMiddlewares...)
-			r.Use(Authenticator(s.ds))
-			r.Use(JWTRefresher)
-			r.Handle(path.Join(conf.Server.BasePath, consts.URLPathNativeAPI, "events"), s.broker)
-		})
-	}
+	// Mount the Native API /events endpoint with all default middlewares, adding the authentication middlewares.
+	// Cisum: always mounted (no longer tied to DevActivityPanel): the web player reloads its lists when a
+	// scan changes the library, so deleted albums and songs disappear at once.
+	r.Group(func(r chi.Router) {
+		r.Use(defaultMiddlewares...)
+		r.Use(Authenticator(s.ds))
+		r.Use(JWTRefresher)
+		r.Handle(path.Join(conf.Server.BasePath, consts.URLPathNativeAPI, "events"), s.broker)
+	})
 
 	// Configure the router with the default middlewares and requestLogger
 	r.Group(func(r chi.Router) {

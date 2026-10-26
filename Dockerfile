@@ -1,4 +1,4 @@
-# Cisum v0.11.4 - Docker image (single platform, built on the target machine).
+# Cisum v0.11.5 - Docker image (single platform, built on the target machine).
 # Build:  docker compose build      (or: docker build -t cisum .)
 # Works with the legacy builder and with BuildKit (no BuildKit-only options).
 
@@ -30,7 +30,7 @@ RUN CGO_ENABLED=1 go build -tags="$(sh ./release/build-tags.sh)" -ldflags="-w -s
 FROM alpine:3.22
 LABEL org.opencontainers.image.title="Cisum" \
       org.opencontainers.image.description="Music server with Subsonic API, based on Navidrome" \
-      org.opencontainers.image.version="0.11.4"
+      org.opencontainers.image.version="0.11.5"
 
 # ffmpeg: transcoding and waveforms. libwebp: native WebP artwork encoding.
 # su-exec: drops root privileges after preparing the data folder (see docker-entrypoint.sh)
