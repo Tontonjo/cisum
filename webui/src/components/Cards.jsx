@@ -1,6 +1,7 @@
-// Cisum web player v0.11.3 - Album and artist cards, grids and horizontal shelves.
+// Cisum web player v0.11.9 - Album and artist cards, grids and horizontal shelves.
 // Cards start loading their detail page when pressed or focused (api/preload.js).
 import { Box, Typography, IconButton, useTheme } from '@mui/material'
+import { useLayoutEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import PlayArrowRounded from '@mui/icons-material/PlayArrowRounded'
 import { queryClient } from '../api/queryClient'
@@ -71,8 +72,25 @@ export function CardGrid({ children, min = 168 }) {
   )
 }
 
+// Distance (px) from the left edge under which a shelf counts as "at the start"
+const SHELF_START_TOLERANCE = 8
+
 /** Horizontally scrolling row of cards with a heading. */
 export function Shelf({ title, action, children }) {
+  // Items added in front (new album) would stay hidden on the left: scroll snapping and
+  // scroll anchoring keep the previously visible card in place. When the user was at the
+  // start of the shelf, bring it back to the start after each update.
+  const rowRef = useRef(null)
+  const atStartRef = useRef(true)
+  useLayoutEffect(() => {
+    const row = rowRef.current
+    if (!row || !atStartRef.current || row.scrollLeft === 0) return
+    row.scrollLeft = 0
+    // The browser may re-snap during the next layout: check again before the next frame
+    const frame = requestAnimationFrame(() => { if (atStartRef.current) row.scrollLeft = 0 })
+    return () => cancelAnimationFrame(frame)
+  })
+  const onScroll = (e) => { atStartRef.current = e.currentTarget.scrollLeft <= SHELF_START_TOLERANCE }
   return (
     <Box component="section" sx={{ mb: 5 }}>
       <Box sx={{ display: 'flex', alignItems: 'baseline', mb: 2 }}>
@@ -80,9 +98,11 @@ export function Shelf({ title, action, children }) {
         {action}
       </Box>
       <Box
+        ref={rowRef}
+        onScroll={onScroll}
         sx={{
           display: 'grid', gridAutoFlow: 'column', gridAutoColumns: { xs: '42%', sm: '200px' }, gap: { xs: 2, md: 3 },
-          overflowX: 'auto', pb: 1, scrollSnapType: 'x mandatory', '& > *': { scrollSnapAlign: 'start' },
+          overflowX: 'auto', overflowAnchor: 'none', pb: 1, scrollSnapType: 'x mandatory', '& > *': { scrollSnapAlign: 'start' },
           scrollbarWidth: 'thin',
         }}
       >
