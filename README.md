@@ -33,6 +33,16 @@ It is based on [Navidrome](https://github.com/navidrome/navidrome) and keeps the
 - Import playlists, favorites, ratings and play counts from another Subsonic server
 - Automatic scan when music files change
 
+## Screenshots
+**Home**  
+![Home page](docs/screenshots/home.png)
+
+**Administration**  
+![Administration overview](docs/screenshots/administration.png)
+
+**Dynamic playlist**  
+![New dynamic playlist dialog](docs/screenshots/dynamic-playlist.png)
+
 ## Start the container
 Image: [tontonjo/cisum](https://hub.docker.com/r/tontonjo/cisum)
 
