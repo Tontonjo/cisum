@@ -1,5 +1,11 @@
 # Cisum
 
+<p align="center">
+  <a href="docs/screenshots/home.png"><img src="docs/screenshots/home.png" alt="Home page" height="170"></a>
+  <a href="docs/screenshots/administration.png"><img src="docs/screenshots/administration.png" alt="Administration overview" height="170"></a>
+  <a href="docs/screenshots/dynamic-playlist.png"><img src="docs/screenshots/dynamic-playlist.png" alt="New dynamic playlist" height="170"></a>
+</p>
+
 ## Tonton Jo  
 ### Join the community:
 [![Youtube](https://badgen.net/badge/Youtube/Subscribe)](http://youtube.com/channel/UCnED3K6K5FDUp-x_8rwpsZw?sub_confirmation=1)
@@ -32,16 +38,6 @@ It is based on [Navidrome](https://github.com/navidrome/navidrome) and keeps the
 - Built-in administration: users, rights, libraries, scans, backups, maintenance
 - Import playlists, favorites, ratings and play counts from another Subsonic server
 - Automatic scan when music files change
-
-## Screenshots
-**Home**  
-![Home page](docs/screenshots/home.png)
-
-**Administration**  
-![Administration overview](docs/screenshots/administration.png)
-
-**Dynamic playlist**  
-![New dynamic playlist dialog](docs/screenshots/dynamic-playlist.png)
 
 ## Start the container
 Image: [tontonjo/cisum](https://hub.docker.com/r/tontonjo/cisum)
